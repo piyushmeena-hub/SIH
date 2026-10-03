@@ -38,7 +38,8 @@ const G={
   limb:new THREE.BoxGeometry(.17,.8,.17), helmet:new THREE.SphereGeometry(.32,10,6,0,Math.PI*2,0,Math.PI/2),
   trunk:new THREE.CylinderGeometry(.25,.35,2,6), crown:new THREE.ConeGeometry(1.8,4.5,7),
   box:new THREE.BoxGeometry(1,1,1), rock:new THREE.DodecahedronGeometry(1,0),
-  wheel:new THREE.CylinderGeometry(.5,.5,.4,10), heli:new THREE.SphereGeometry(1.4,10,8), blob:new THREE.SphereGeometry(1,10,6)
+  wheel:new THREE.CylinderGeometry(.5,.5,.4,10), heli:new THREE.SphereGeometry(1.4,10,8), blob:new THREE.SphereGeometry(1,10,6),
+  beacon:new THREE.CylinderGeometry(.12,.12,3.5,6)
 };
 Object.values(G).forEach(g=>shared.add(g));
 const matCache=new Map();
@@ -203,52 +204,91 @@ function makeHeli(color,center,rad,alt,speed){
   helis.push({g,rotor,center,rad,alt,speed,ang:rand()*6.28});
 }
 
-/* ---------- people ---------- */
+/* ---------- people (unconscious casualties needing external help) ---------- */
 const SKIN=[0xf1c9a5,0xd9a27a,0xb07850,0x7d5233,0x5a3a22];
 const SHIRTS=[0x3b6ea8,0x8c3b3b,0x4a7a4a,0x7a5a9a,0xc9b458,0x2f4f5f,0xa86a3b,0xd0d0d0];
 function makePerson(kind){
-  const g=new THREE.Group(), resc=kind==='rescuer';
-  const shirt=resc?0xff7a1a:pick(SHIRTS), pants=resc?0x2b3a4a:pick([0x2c3440,0x4b3b2b,0x1f2a36,0x5b5b5b]);
+  const g=new THREE.Group();
+  const shirt=pick(SHIRTS), pants=pick([0x2c3440,0x4b3b2b,0x1f2a36,0x5b5b5b]);
   const body=new THREE.Mesh(G.body,M(shirt));body.position.y=1.45;body.castShadow=true;
   const head=new THREE.Mesh(G.head,M(pick(SKIN)));head.position.y=2.3;head.castShadow=true;g.add(body,head);
-  if(resc){const h=new THREE.Mesh(G.helmet,M(0xffd23a));h.position.y=2.33;g.add(h);}
-  const limb=(x,y,col)=>{const p=new THREE.Group();p.position.set(x,y,0);const m=new THREE.Mesh(G.limb,M(col));m.position.y=-.4;m.castShadow=true;p.add(m);g.add(p);return p;};
+  const limb=(x,y,col)=>{const p=new THREE.Group();p.position.set(x,y,0);const m=new THREE.Mesh(G.limb,M(col));m.position.y=-.4;m.castShadow=true;p.add(m);return p;};
   g.userData.limbs={legL:limb(-.15,.88,pants),legR:limb(.15,.88,pants),armL:limb(-.47,1.95,shirt),armR:limb(.47,1.95,shirt)};
+
+  // SOS distress beacon marker above unconscious survivor indicating they need external rescue
+  const beacon=new THREE.Mesh(G.beacon,new THREE.MeshBasicMaterial({color:0xff2222,transparent:true,opacity:.85}));
+  const beaconHead=new THREE.Mesh(G.head,new THREE.MeshBasicMaterial({color:0xff3322}));
+  beaconHead.scale.setScalar(.65);
+  g.add(beacon,beaconHead);
+  g.userData.beacon=beacon;
+  g.userData.beaconHead=beaconHead;
   return g;
 }
 function townSpot(){const m=curMode,h=m.townR-4;return [m.town[0]+R(-h,h),m.town[1]+R(-h,h)];}
 function addAgent(kind,x,z,o={}){
-  const g=makePerson(kind);g.position.set(x,0,z);g.visible=showPeople;modeGroup.add(g);
-  const a={g,kind,state:o.state||'flee',speed:kind==='rescuer'?R(2.5,3.5):R(4,6.5),target:new THREE.Vector2(),phase:rand()*6,wait:o.wait||0,fixedY:o.fixedY,atSafe:false};
-  if(a.state==='flee')fleeTarget(a);else if(a.state==='rescue')rescueTarget(a);
-  agents.push(a);return a;
+  const g=makePerson(kind);
+  // Unconscious prone posture: lying flat on the terrain, motionless
+  g.rotation.x=Math.PI/2;
+  g.rotation.z=R(0,Math.PI*2);
+  const L=g.userData.limbs;
+  L.armL.rotation.z=R(-0.8,0.8);
+  L.armR.rotation.z=R(-0.8,0.8);
+  L.legL.rotation.z=R(-0.3,0.3);
+  L.legR.rotation.z=R(-0.3,0.3);
+
+  // Position beacon vertically upright above the prone person
+  if(g.userData.beacon){
+    g.userData.beacon.rotation.x=-Math.PI/2;
+    g.userData.beacon.position.set(0,1.2,1.8);
+    g.userData.beaconHead.rotation.x=-Math.PI/2;
+    g.userData.beaconHead.position.set(0,1.2,3.3);
+  }
+
+  g.position.set(x,0,z);
+  g.visible=showPeople;
+  modeGroup.add(g);
+  const a={g,kind:'casualty',state:'unconscious',phase:rand()*6.28,fixedY:o.fixedY};
+  agents.push(a);
+  return a;
 }
-function fleeTarget(a){const s=curMode.safe;a.target.set(s[0]+R(-5,5),s[1]+R(-5,5));}
-function rescueTarget(a){const [x,z]=townSpot();a.target.set(x,z);}
-function residents(n){for(let i=0;i<n;i++){const [x,z]=townSpot();const idle=rand()<.45;
-  addAgent('resident',x,z,{state:idle?'idle':'flee',wait:idle?R(0,7):0});}}
-function rescuers(n){for(let i=0;i<n;i++){const [x,z]=townSpot();addAgent('rescuer',x,z,{state:'rescue'});}}
+function fleeTarget(a){}
+function rescueTarget(a){}
+function spreadSurvivors(n){
+  const m=curMode;
+  for(let i=0;i<n;i++){
+    let x=0, z=0, valid=false;
+    for(let tryCount=0;tryCount<60;tryCount++){
+      // Spread across the wider terrain instead of clustering only in town
+      const rad=R(15,115);
+      const ang=R(0,Math.PI*2);
+      x=m.town[0]+Math.cos(ang)*rad;
+      z=m.town[1]+Math.sin(ang)*rad;
+      if(Math.abs(x)>125||Math.abs(z)>125)continue;
+      if(Math.hypot(x-m.safe[0],z-m.safe[1])<16)continue;
+      valid=true;break;
+    }
+    if(!valid){x=R(-85,85);z=R(-85,85);}
+    addAgent('casualty',x,z,{});
+  }
+}
+function residents(n){spreadSurvivors(n);}
+function rescuers(n){}
 function pushOut(p){for(const b of buildings){const ex=b.hw+.6,ez=b.hd+.6,dx=p.x-b.x,dz=p.z-b.z;
   if(Math.abs(dx)<ex&&Math.abs(dz)<ez){const ox=ex-Math.abs(dx),oz=ez-Math.abs(dz);if(ox<oz)p.x+=Math.sign(dx||1)*ox;else p.z+=Math.sign(dz||1)*oz;}}}
 function updateAgents(dt,t){
   const m=curMode;
   for(const a of agents){
-    const L=a.g.userData.limbs,p=a.g.position;
-    if(a.state==='wave'){L.armL.rotation.z=-2.6+Math.sin(t*6+a.phase)*.45;L.armR.rotation.z=2.6-Math.sin(t*6+a.phase+1)*.45;
-      p.y=a.fixedY;continue;}
-    if(a.state==='idle'){a.wait-=dt;L.legL.rotation.x=L.legR.rotation.x=0;L.armL.rotation.x=L.armR.rotation.x=0;
-      L.armL.rotation.z=-.15;L.armR.rotation.z=.15;
-      if(a.wait<=0){if(a.atSafe){const [x,z]=townSpot();p.x=x;p.z=z;a.atSafe=false;}a.state='flee';fleeTarget(a);}
-    }else{
-      const dx=a.target.x-p.x,dz=a.target.y-p.z,d=Math.hypot(dx,dz);
-      if(d<1.2){if(a.state==='flee'){a.state='idle';a.wait=R(3,7);a.atSafe=true;evacuated++;}else rescueTarget(a);}
-      else{let sp=a.speed*(m.speedMul?m.speedMul(p.x,p.z):1);
-        p.x+=dx/d*sp*dt;p.z+=dz/d*sp*dt;a.g.rotation.y=Math.atan2(dx,dz);a.phase+=dt*sp*2.2;
-        const s=Math.sin(a.phase);L.legL.rotation.x=s*.75;L.legR.rotation.x=-s*.75;L.armL.rotation.x=-s*.6;L.armR.rotation.x=s*.6;
-        L.armL.rotation.z=a.kind==='resident'&&m.huddle?-.05:-.1;L.armR.rotation.z=-L.armL.rotation.z;}
-      pushOut(p);
+    const p=a.g.position;
+    const baseY=(a.fixedY??H(p.x,p.z));
+    p.y=baseY+0.28;
+    // Pulsing distress beacon requesting external assistance
+    const beacon=a.g.userData.beacon;
+    const beaconHead=a.g.userData.beaconHead;
+    if(beacon&&beaconHead){
+      const pulse=0.35+0.65*Math.abs(Math.sin(t*3.2+a.phase));
+      beacon.material.opacity=pulse;
+      beaconHead.position.z=3.1+pulse*0.45;
     }
-    p.y=(a.fixedY??H(p.x,p.z))+.05;
   }
 }
 
@@ -298,10 +338,10 @@ const MODES=[
   build(c){addTown(0,-4,.6,{});addTrees(100,(x,z)=>okTree(x,z,3));
     c.L=.3;c.water=makeWater(0x7b6b4c,.88);
     const tall=buildings.filter(b=>b.mesh).sort(()=>rand()-.5).slice(0,8);
-    tall.forEach(b=>addAgent('resident',b.x+R(-1.5,1.5),b.z+R(-1.5,1.5),{state:'wave',fixedY:b.top}));
+    tall.forEach(b=>addAgent('casualty',b.x+R(-1.5,1.5),b.z+R(-1.5,1.5),{fixedY:b.top}));
     residents(12);
     c.boats=[];for(let k=0;k<3;k++){const g=new THREE.Group();const hull=new THREE.Mesh(G.box,M(0xff8a1a));hull.scale.set(3.6,.8,1.7);hull.castShadow=true;g.add(hull);
-      [-.8,.8].forEach(px=>{const p=makePerson('rescuer');p.scale.setScalar(.75);p.position.set(px,-.2,0);p.rotation.y=Math.PI/2;g.add(p);});
+      
       modeGroup.add(g);c.boats.push({g,r:R(12,26),ang:rand()*6.28,sp:R(.15,.3)*(rand()<.5?-1:1)});}
     makeHeli(0xd23a2a,()=>[0,-4],32,36,.35);
     precip(2600,{color:0xb9c8d6,size:.45,opacity:.6,fall:38,wind:3});
@@ -539,7 +579,7 @@ function setMode(i){
   dock.children[i].scrollIntoView({block:'nearest',inline:'nearest'});
   updateStatus();
 }
-function updateStatus(){$('mStatus').textContent=curMode.status(ctx);$('evac').textContent=evacuated;}
+function updateStatus(){$('mStatus').textContent=curMode.status(ctx);$('evac').textContent=agents.length;}
 $('intensity').addEventListener('input',e=>INT=parseFloat(e.target.value));
 const toggle=(id,get,set)=>{const b=$(id);b.setAttribute('aria-pressed',String(get()));b.addEventListener('click',()=>{set(!get());b.setAttribute('aria-pressed',String(get()));});};
 toggle('bPeople',()=>showPeople,v=>{showPeople=v;agents.forEach(a=>a.g.visible=v);});
