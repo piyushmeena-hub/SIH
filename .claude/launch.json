@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "disaster-terrain-3d",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "http.server", "8000", "--directory", "disaster-terrain-3d"],
+      "port": 8000
+    }
+  ]
+}

@@ -1,6 +1,6 @@
 # Disaster Terrain Simulator (3D)
 
-An interactive 3D simulation of eight natural disasters on procedurally generated terrain, with unconscious survivors scattered across the terrain who need outside help. Built for Smart India Hackathon (SIH).
+An interactive 3D simulation of eight natural disasters on procedurally generated terrain, with unconscious survivors lying in the town streets who need outside help. Built for Smart India Hackathon (SIH).
 
 ## Disaster modes
 
@@ -19,10 +19,11 @@ Each mode shows a live status line and a real-world safety tip.
 
 ## Survivors
 
-- In every mode, unconscious survivors are scattered across the whole terrain: in town, in the fields, on hillsides and along coasts or riverbanks.
-- Each survivor is marked by a floating red diamond and a pulsing red ring, showing they need help from outside.
-- Placement avoids water, lava craters, building interiors and very steep slopes, and survivors are spaced apart so they don't cluster.
-- The panel shows how many unconscious survivors are on the map.
+- In every mode, unconscious survivors lie inside the town (the grey rectangle), in the streets and open lots between buildings.
+- They are spread evenly across the whole town using a jittered grid, at least 4.5 units apart, so they don't cluster in one corner.
+- Each body is checked so no part of it overlaps a building, rubble pile or vehicle.
+- In the flood mode the streets are under water, so survivors lie on the rooftops instead.
+- Each survivor is marked by a floating red diamond and a pulsing red ring, showing they need outside help.
 
 ## How to run
 
