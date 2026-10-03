@@ -120,4 +120,4 @@ disaster-terrain-3d/
 ## Credits & License
 
 - **Three.js** is © the Three.js authors, licensed under the **MIT License** (see `libs/THREE-LICENSE.txt`).
-- Developed for the **Smart India Hackathon (SIH)**.
+- Developed for the **Smart India Hackathon (SIH)**.  
