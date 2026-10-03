@@ -1,6 +1,6 @@
 # Disaster Terrain Simulator (3D)
 
-An interactive 3D simulation of eight natural disasters on procedurally generated terrain, with animated residents, rescue crews, emergency vehicles and evacuation points. Built for Smart India Hackathon (SIH).
+An interactive 3D simulation of eight natural disasters on procedurally generated terrain, with unconscious survivors scattered across the terrain who need outside help. Built for Smart India Hackathon (SIH).
 
 ## Disaster modes
 
@@ -16,6 +16,13 @@ An interactive 3D simulation of eight natural disasters on procedurally generate
 | 8 | Blizzard | Heavy wind-driven snow, low visibility, snowplow, stuck car |
 
 Each mode shows a live status line and a real-world safety tip.
+
+## Survivors
+
+- In every mode, unconscious survivors are scattered across the whole terrain: in town, in the fields, on hillsides and along coasts or riverbanks.
+- Each survivor is marked by a floating red diamond and a pulsing red ring, showing they need help from outside.
+- Placement avoids water, lava craters, building interiors and very steep slopes, and survivors are spaced apart so they don't cluster.
+- The panel shows how many unconscious survivors are on the map.
 
 ## How to run
 
@@ -34,7 +41,7 @@ The project works offline; no install or build step is needed.
 - Scroll or pinch: zoom
 - Keys 1–8 or the bottom bar: switch disaster
 - Intensity slider: make the disaster weaker or stronger
-- Buttons: show/hide people, auto-rotate, pause, reset view
+- Buttons: show/hide survivors, auto-rotate, pause, reset view
 
 ## Tech stack
 

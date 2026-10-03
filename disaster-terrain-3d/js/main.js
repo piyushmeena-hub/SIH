@@ -39,7 +39,7 @@ const G={
   trunk:new THREE.CylinderGeometry(.25,.35,2,6), crown:new THREE.ConeGeometry(1.8,4.5,7),
   box:new THREE.BoxGeometry(1,1,1), rock:new THREE.DodecahedronGeometry(1,0),
   wheel:new THREE.CylinderGeometry(.5,.5,.4,10), heli:new THREE.SphereGeometry(1.4,10,8), blob:new THREE.SphereGeometry(1,10,6),
-  beacon:new THREE.CylinderGeometry(.12,.12,3.5,6)
+  beacon:new THREE.OctahedronGeometry(.45), ring:new THREE.RingGeometry(1.1,1.4,24)
 };
 Object.values(G).forEach(g=>shared.add(g));
 const matCache=new Map();
@@ -64,7 +64,7 @@ function buildingGeo(w,h,d){const g=new THREE.BoxGeometry(w,h,d);const uv=g.attr
 /* ---------- state ---------- */
 const W=280, SEG=170;
 let H=()=>0, curMode=null, curIdx=0, ctx={}, INT=1, paused=false, showPeople=true;
-let agents=[], buildings=[], parts=[], sirens=[], helis=[], evacuated=0, modeT=0;
+let agents=[], victimList=[], buildings=[], parts=[], sirens=[], helis=[], modeT=0;
 
 function clearMode(){
   world.remove(modeGroup);
@@ -73,7 +73,7 @@ function clearMode(){
     if(o.material)(Array.isArray(o.material)?o.material:[o.material]).forEach(m=>{if(!shared.has(m))m.dispose();});
   });
   modeGroup=new THREE.Group(); world.add(modeGroup); world.position.set(0,0,0);
-  agents=[];buildings=[];parts=[];sirens=[];helis=[];
+  agents=[];victimList=[];buildings=[];parts=[];sirens=[];helis=[];
 }
 
 /* ---------- terrain ---------- */
@@ -179,8 +179,11 @@ function addSafeZone(x,z){
   const disc=new THREE.Mesh(new THREE.CircleGeometry(6.2,40),new THREE.MeshBasicMaterial({color:0x3fd27a,transparent:true,opacity:.18,side:THREE.DoubleSide,depthWrite:false}));
   disc.rotation.x=-Math.PI/2;disc.position.set(x,y+.02,z);
   const pole=new THREE.Mesh(G.box,M(0xdddddd));pole.scale.set(.2,7,.2);pole.position.set(x+5,y+3.5,z);
-  const flag=new THREE.Mesh(G.box,M(0x2fbf6a,{emissive:0x0f5a2c}));flag.scale.set(2.4,1.4,.08);flag.position.set(x+6.2,y+6.2,z);
-  modeGroup.add(ring,disc,pole,flag);
+  const flag=new THREE.Mesh(G.box,M(0xffffff));flag.scale.set(2.4,1.4,.08);flag.position.set(x+6.2,y+6.2,z);
+  const cr1=new THREE.Mesh(G.box,M(0x2fbf6a,{emissive:0x0f5a2c}));cr1.scale.set(.3,1,.1);cr1.position.set(x+6.2,y+6.2,z+.02);
+  const cr2=cr1.clone();cr2.scale.set(1,.3,.1);
+  const tent=new THREE.Mesh(new THREE.ConeGeometry(3.2,3.6,4),M(0xf4f4f0));tent.rotation.y=Math.PI/4;tent.position.set(x-3.5,y+1.8,z-3.5);tent.castShadow=true;
+  modeGroup.add(ring,disc,pole,flag,cr1,cr2,tent);
 }
 function makeVehicle(color,lights,x,z,rot){
   const g=new THREE.Group();
@@ -204,98 +207,64 @@ function makeHeli(color,center,rad,alt,speed){
   helis.push({g,rotor,center,rad,alt,speed,ang:rand()*6.28});
 }
 
-/* ---------- people (unconscious casualties needing external help) ---------- */
+/* ---------- people ---------- */
 const SKIN=[0xf1c9a5,0xd9a27a,0xb07850,0x7d5233,0x5a3a22];
 const SHIRTS=[0x3b6ea8,0x8c3b3b,0x4a7a4a,0x7a5a9a,0xc9b458,0x2f4f5f,0xa86a3b,0xd0d0d0];
 function makePerson(kind){
-  const g=new THREE.Group();
-  const shirt=pick(SHIRTS), pants=pick([0x2c3440,0x4b3b2b,0x1f2a36,0x5b5b5b]);
+  const g=new THREE.Group(), resc=kind==='rescuer';
+  const shirt=resc?0xff7a1a:pick(SHIRTS), pants=resc?0x2b3a4a:pick([0x2c3440,0x4b3b2b,0x1f2a36,0x5b5b5b]);
   const body=new THREE.Mesh(G.body,M(shirt));body.position.y=1.45;body.castShadow=true;
   const head=new THREE.Mesh(G.head,M(pick(SKIN)));head.position.y=2.3;head.castShadow=true;g.add(body,head);
-  const limb=(x,y,col)=>{const p=new THREE.Group();p.position.set(x,y,0);const m=new THREE.Mesh(G.limb,M(col));m.position.y=-.4;m.castShadow=true;p.add(m);return p;};
+  if(resc){const h=new THREE.Mesh(G.helmet,M(0xffd23a));h.position.y=2.33;g.add(h);}
+  const limb=(x,y,col)=>{const p=new THREE.Group();p.position.set(x,y,0);const m=new THREE.Mesh(G.limb,M(col));m.position.y=-.4;m.castShadow=true;p.add(m);g.add(p);return p;};
   g.userData.limbs={legL:limb(-.15,.88,pants),legR:limb(.15,.88,pants),armL:limb(-.47,1.95,shirt),armR:limb(.47,1.95,shirt)};
-
-  // SOS distress beacon marker above unconscious survivor indicating they need external rescue
-  const beacon=new THREE.Mesh(G.beacon,new THREE.MeshBasicMaterial({color:0xff2222,transparent:true,opacity:.85}));
-  const beaconHead=new THREE.Mesh(G.head,new THREE.MeshBasicMaterial({color:0xff3322}));
-  beaconHead.scale.setScalar(.65);
-  g.add(beacon,beaconHead);
-  g.userData.beacon=beacon;
-  g.userData.beaconHead=beaconHead;
   return g;
 }
 function townSpot(){const m=curMode,h=m.townR-4;return [m.town[0]+R(-h,h),m.town[1]+R(-h,h)];}
-function addAgent(kind,x,z,o={}){
-  const g=makePerson(kind);
-  // Unconscious prone posture: lying flat on the terrain, motionless
-  g.rotation.x=Math.PI/2;
-  g.rotation.z=R(0,Math.PI*2);
-  const L=g.userData.limbs;
-  L.armL.rotation.z=R(-0.8,0.8);
-  L.armR.rotation.z=R(-0.8,0.8);
-  L.legL.rotation.z=R(-0.3,0.3);
-  L.legR.rotation.z=R(-0.3,0.3);
-
-  // Position beacon vertically upright above the prone person
-  if(g.userData.beacon){
-    g.userData.beacon.rotation.x=-Math.PI/2;
-    g.userData.beacon.position.set(0,1.2,1.8);
-    g.userData.beaconHead.rotation.x=-Math.PI/2;
-    g.userData.beaconHead.position.set(0,1.2,3.3);
-  }
-
-  g.position.set(x,0,z);
-  g.visible=showPeople;
-  modeGroup.add(g);
-  const a={g,kind:'casualty',state:'unconscious',phase:rand()*6.28,fixedY:o.fixedY};
-  agents.push(a);
-  return a;
-}
-function fleeTarget(a){}
-function rescueTarget(a){}
-function spreadSurvivors(n){
-  const m=curMode;
-  for(let i=0;i<n;i++){
-    let x=0, z=0, valid=false;
-    for(let tryCount=0;tryCount<60;tryCount++){
-      // Spread across the wider terrain instead of clustering only in town
-      const rad=R(15,115);
-      const ang=R(0,Math.PI*2);
-      x=m.town[0]+Math.cos(ang)*rad;
-      z=m.town[1]+Math.sin(ang)*rad;
-      if(Math.abs(x)>125||Math.abs(z)>125)continue;
-      if(Math.hypot(x-m.safe[0],z-m.safe[1])<16)continue;
-      valid=true;break;
-    }
-    if(!valid){x=R(-85,85);z=R(-85,85);}
-    addAgent('casualty',x,z,{});
-  }
-}
-function residents(n){spreadSurvivors(n);}
-function rescuers(n){}
+const VMAT={wait:M(0xff3b30,{emissive:0xff2010,emissiveIntensity:1.3})};
 function pushOut(p){for(const b of buildings){const ex=b.hw+.6,ez=b.hd+.6,dx=p.x-b.x,dz=p.z-b.z;
   if(Math.abs(dx)<ex&&Math.abs(dz)<ez){const ox=ex-Math.abs(dx),oz=ez-Math.abs(dz);if(ox<oz)p.x+=Math.sign(dx||1)*ox;else p.z+=Math.sign(dz||1)*oz;}}}
+
+/* rooftop survivors (flood only) */
+function addAgent(kind,x,z,o={}){
+  const g=makePerson(kind);g.position.set(x,0,z);g.visible=showPeople;modeGroup.add(g);
+  const a={g,kind,state:o.state||'wave',phase:rand()*6,fixedY:o.fixedY};agents.push(a);return a;
+}
+
+/* unconscious survivors, scattered across the whole map */
+function makeVictim(x,z){
+  const g=new THREE.Group(),p=makePerson('resident');p.rotation.x=-Math.PI/2;p.position.y=.42;
+  const L=p.userData.limbs;L.armL.rotation.z=-R(.2,.6);L.armR.rotation.z=R(.2,.7);L.legL.rotation.z=-R(0,.15);L.legR.rotation.z=R(0,.2);
+  const beacon=new THREE.Mesh(G.beacon,VMAT.wait);beacon.position.set(0,3.4,-1.1);
+  const ring=new THREE.Mesh(G.ring,VMAT.wait);ring.rotation.x=-Math.PI/2;ring.position.set(0,.18,-1.1);
+  g.add(p,beacon,ring);g.position.set(x,H(x,z)+.05,z);g.rotation.y=rand()*6.28;g.visible=showPeople;modeGroup.add(g);
+  victimList.push({g,beacon,ring,phase:rand()*6});
+}
+function scatterVictims(n){
+  const m=curMode,pts=[];let tries=0;
+  while(pts.length<n&&tries<n*120){tries++;
+    let x,z;if(rand()<.25)[x,z]=townSpot();else{x=R(-115,115);z=R(-115,115);}
+    const p={x,z};pushOut(p);
+    if(slopeAt(p.x,p.z)>.9)continue;
+    if(m.victimOk&&!m.victimOk(p.x,p.z,H(p.x,p.z)))continue;
+    if(pts.some(q=>Math.hypot(q.x-p.x,q.z-p.z)<11))continue;
+    pts.push(p);}
+  pts.forEach(p=>makeVictim(p.x,p.z));
+}
+
 function updateAgents(dt,t){
-  const m=curMode;
-  for(const a of agents){
-    const p=a.g.position;
-    const baseY=(a.fixedY??H(p.x,p.z));
-    p.y=baseY+0.28;
-    // Pulsing distress beacon requesting external assistance
-    const beacon=a.g.userData.beacon;
-    const beaconHead=a.g.userData.beaconHead;
-    if(beacon&&beaconHead){
-      const pulse=0.35+0.65*Math.abs(Math.sin(t*3.2+a.phase));
-      beacon.material.opacity=pulse;
-      beaconHead.position.z=3.1+pulse*0.45;
-    }
-  }
+  for(const a of agents){const L=a.g.userData.limbs;
+    L.armL.rotation.z=-2.6+Math.sin(t*6+a.phase)*.45;L.armR.rotation.z=2.6-Math.sin(t*6+a.phase+1)*.45;a.g.position.y=a.fixedY;}
+  for(const v of victimList){
+    v.beacon.position.y=3.4+Math.sin(t*2.5+v.phase)*.3;v.beacon.rotation.y+=dt*2;
+    v.ring.scale.setScalar(1+Math.sin(t*4+v.phase)*.25);
+    v.g.position.y=H(v.g.position.x,v.g.position.z)+.05;}
 }
 
 /* ---------- modes ---------- */
 const MODES=[
 { id:'earthquake',name:'Earthquake',icon:'🏚️',
-  desc:'Shaking arrives in waves. Look for tilted and collapsed buildings, open fissures, falling debris and dust while residents move to open ground.',
+  desc:'Shaking arrives in waves. Look for tilted and collapsed buildings, open fissures, falling debris and dust. Unconscious survivors lie scattered through the town and the surrounding hills.',
   tip:'Drop, cover and hold on until the shaking stops. Then move to open space away from buildings and power lines.',
   sky:0xb6c0c6,fogNear:90,fogFar:330,hemiGround:0x6b5d48,
   town:[0,0],townR:27,safe:[66,52],
@@ -306,7 +275,7 @@ const MODES=[
       const s=new THREE.Mesh(G.box,M(0x1b1612));s.scale.set(Math.hypot(nx-px,nz-pz)+.6,.4,R(.8,2.4));
       s.position.set(mx,H(mx,mz)+.12,mz);s.rotation.y=-Math.atan2(nz-pz,nx-px);modeGroup.add(s);px=nx;pz=nz;}
     addTrees(90,(x,z)=>okTree(x,z));
-    residents(22);rescuers(5);
+    scatterVictims(18);
     makeVehicle(0xf4f4f4,[0xff2a2a,0x2a6bff],27,8,Math.PI/2);
     makeVehicle(0xc0262b,[0xff2a2a,0xff2a2a],27,-6,Math.PI/2);
     const rub=buildings.filter(b=>b.rubble), src=rub.length?rub:buildings;
@@ -328,20 +297,21 @@ const MODES=[
   status(c){return c.env>.6?'Strong shaking':c.env>.2?'Moderate shaking':'Aftershock lull';}
 },
 { id:'flood',name:'Flood',icon:'🌊',
-  desc:'River water rises and falls over the valley town. People stranded on rooftops wave for help while rescue boats and a helicopter circle.',
+  desc:'River water rises and falls over the valley town. Unconscious survivors lie along both sides of the valley, and people stranded on rooftops wave to the boats and helicopter.',
   tip:'Move to higher ground right away. Never walk or drive through floodwater; even shallow moving water can sweep you off your feet.',
   sky:0x8a97a3,fogNear:60,fogFar:280,hemiGround:0x4a4a3c,sunI:.55,
   town:[0,-4],townLevel:.6,townR:27,safe:[12,66],
+  victimOk:(x,z,h)=>h>6.2,
   raw:(x,z)=>hills(x,z,5)+Math.pow(Math.abs(z)/55,1.8)*16-1.5,
   color(c,x,y,z,s){natural(c,x,y,z,s,{grass:0x56803a});_c2.set(0x6d6248);c.lerp(_c2,smooth(1.4,-.5,y));},
   speedMul(x,z){const d=ctx.L-H(x,z);return d>0?Math.max(.3,1-d*.3):1;},
   build(c){addTown(0,-4,.6,{});addTrees(100,(x,z)=>okTree(x,z,3));
     c.L=.3;c.water=makeWater(0x7b6b4c,.88);
-    const tall=buildings.filter(b=>b.mesh).sort(()=>rand()-.5).slice(0,8);
-    tall.forEach(b=>addAgent('casualty',b.x+R(-1.5,1.5),b.z+R(-1.5,1.5),{fixedY:b.top}));
-    residents(12);
+    const tall=buildings.filter(b=>b.mesh).sort(()=>rand()-.5).slice(0,6);
+    tall.forEach(b=>addAgent('resident',b.x+R(-1.5,1.5),b.z+R(-1.5,1.5),{state:'wave',fixedY:b.top}));
+    scatterVictims(16);
     c.boats=[];for(let k=0;k<3;k++){const g=new THREE.Group();const hull=new THREE.Mesh(G.box,M(0xff8a1a));hull.scale.set(3.6,.8,1.7);hull.castShadow=true;g.add(hull);
-      
+      [-.8,.8].forEach(px=>{const p=makePerson('rescuer');p.scale.setScalar(.75);p.position.set(px,-.2,0);p.rotation.y=Math.PI/2;g.add(p);});
       modeGroup.add(g);c.boats.push({g,r:R(12,26),ang:rand()*6.28,sp:R(.15,.3)*(rand()<.5?-1:1)});}
     makeHeli(0xd23a2a,()=>[0,-4],32,36,.35);
     precip(2600,{color:0xb9c8d6,size:.45,opacity:.6,fall:38,wind:3});
@@ -354,7 +324,7 @@ const MODES=[
   status(c){return `Floodwater ${Math.max(0,c.L-.6).toFixed(1)} m above street level`;}
 },
 { id:'wildfire',name:'Wildfire',icon:'🔥',
-  desc:'A fire front sweeps east through the forest, leaving burnt trees behind. Smoke drifts downwind as firefighters and a water helicopter work the edge.',
+  desc:'A fire front sweeps east through the forest, leaving burnt trees behind. Smoke drifts downwind while a water helicopter works the edge. People overcome by smoke lie scattered through the hills.',
   tip:'Leave early when told to evacuate. If trapped, get to a cleared area, stay low out of the smoke and cover your nose and mouth.',
   sky:0xc79a72,fogNear:60,fogFar:270,hemiSky:0xffd2a8,hemiGround:0x5a4030,sun:0xffb070,
   town:[35,30],townR:21,safe:[96,-40],
@@ -363,7 +333,7 @@ const MODES=[
   build(c){addTown(35,30,this._townLevel,{grid:3});
     c.trees=addTrees(240,(x,z)=>okTree(x,z));c.trees.forEach(t=>t.off=(vnoise(t.x*.05,t.z*.05)-.5)*24);
     c.burning=[];
-    residents(16);rescuers(6);
+    scatterVictims(18);
     makeVehicle(0xc0262b,[0xff2a2a,0xff2a2a],14,40,0);makeVehicle(0xc0262b,[0xff2a2a,0xff2a2a],14,22,0);
     makeHeli(0xe8c020,()=>[c.front+12,0],28,42,.4);
     new Particles(900,{color:0xff7a1e,size:2.6,opacity:.9,additive:true,
@@ -383,13 +353,13 @@ const MODES=[
   status(c){return `Fire front moving east, ${c.burning.length} trees burning`;}
 },
 { id:'tornado',name:'Tornado',icon:'🌪️',
-  desc:'A rotating funnel tracks across farmland under a dark storm cloud, lifting debris and stripping roofs. Residents run for the storm shelter.',
+  desc:'A rotating funnel tracks across farmland under a dark storm cloud, lifting debris and stripping roofs. People knocked unconscious are scattered across the fields and town.',
   tip:'Go to a basement or an interior room on the lowest floor, away from windows. Cover your head and neck.',
   sky:0x5b6862,fog:0x6a7670,fogNear:40,fogFar:240,hemiI:.55,sunI:.4,hemiGround:0x3c4038,
   town:[-5,10],townR:27,safe:[-78,-64],
   raw:(x,z)=>hills(x,z,4)+fbm(x*.06,z*.06,2)*1.5,
   build(c){addTown(-5,10,this._townLevel,{});c.trees=addTrees(110,(x,z)=>okTree(x,z));
-    residents(18);rescuers(3);makeVehicle(0xf4f4f4,[0xff2a2a,0x2a6bff],-38,-20,0);
+    scatterVictims(18);makeVehicle(0xf4f4f4,[0xff2a2a,0x2a6bff],-38,-20,0);
     c.cx=0;c.cz=0;c.gy=0;
     const N=2600,fa=new Float32Array(N),fh=new Float32Array(N),fr=new Float32Array(N);
     new Particles(N,{color:0x8e8b82,size:2.4,opacity:.5,
@@ -417,15 +387,16 @@ const MODES=[
   status(c){return `Funnel ${Math.round(Math.hypot(c.cx+5,c.cz-10))} m from the town center`;}
 },
 { id:'volcano',name:'Volcano',icon:'🌋',
-  desc:'The volcano erupts an ash column and throws lava bombs while glowing lava flows creep downhill. The town below evacuates by road.',
+  desc:'The volcano erupts an ash column and throws lava bombs while glowing lava flows creep downhill. People who collapsed in the ash lie across the slopes and in town.',
   tip:'Follow official evacuation routes and avoid valleys where lava and mudflows travel. Cover your nose and mouth against falling ash.',
   sky:0x7d716b,fogNear:70,fogFar:300,hemiI:.6,sun:0xffd2b0,sunI:.7,hemiGround:0x3a302c,
-  town:[42,40],townR:21,safe:[92,-28],camR:175,camTarget:[5,0],
+  town:[42,40],townR:21,safe:[92,-28],
+  victimOk:(x,z)=>Math.hypot(x+50,z+50)>18,camR:175,camTarget:[5,0],
   raw:(x,z)=>{const d=Math.hypot(x+50,z+50);return hills(x,z,6)+54/(1+(d/21)**2)-13*Math.exp(-((d/5.5)**2));},
   color(c,x,y,z,s){natural(c,x,y,z,s,{grass:0x6f7a4a,dry:0x8a8060});_c2.set(0x3a3230);c.lerp(_c2,smooth(9,24,y));
     _c2.set(0x77706a);c.lerp(_c2,.5*smooth(90,30,Math.hypot(x+50,z+50)));},
   build(c){addTown(42,40,this._townLevel,{grid:3});addTrees(120,(x,z)=>okTree(x,z)&&Math.hypot(x+50,z+50)>42);
-    residents(18);rescuers(4);makeVehicle(0xe8b820,null,22,52,0);makeVehicle(0xf4f4f4,[0xff2a2a,0x2a6bff],62,22,Math.PI/2);
+    scatterVictims(18);makeVehicle(0xe8b820,null,22,52,0);makeVehicle(0xf4f4f4,[0xff2a2a,0x2a6bff],62,22,Math.PI/2);
     makeHeli(0x3a6ea8,()=>[10,10],55,48,.25);
     c.flows=[];
     [.35,.8,1.25,2.6,-1].forEach((a,fi)=>{let x=-50+Math.cos(a)*6.5,z=-50+Math.sin(a)*6.5;const pts=[];
@@ -457,14 +428,15 @@ const MODES=[
   status(c){return 'Eruption ongoing: ash column and lava flows advancing';}
 },
 { id:'tsunami',name:'Tsunami',icon:'🌊',
-  desc:'The sea pulls back from the beach, then a wave surges ashore and floods the low coast. Residents head for the hill to the west.',
+  desc:'The sea pulls back from the beach, then a wave surges ashore and floods the low coast. Unconscious survivors are scattered along the coast, through town and up the hills.',
   tip:'If the ground shakes hard or the sea suddenly pulls back, go to high ground or far inland right away. Do not wait for an official warning.',
   sky:0x9fb6c4,fogNear:90,fogFar:330,hemiGround:0x5a5a48,
-  town:[-32,-5],townLevel:5,townR:21,safe:[-85,45],camTarget:[-10,0],camR:165,
+  town:[-32,-5],townLevel:5,townR:21,safe:[-85,45],
+  victimOk:(x,z,h)=>h>1.5,camTarget:[-10,0],camR:165,
   raw:(x,z)=>hills(x,z,5)+7-smooth(-15,75,x)*24+16*Math.exp(-((x+85)**2+(z-45)**2)/900),
   color(c,x,y,z,s){natural(c,x,y,z,s,{sandBelow:2.6});_c2.set(0x5d6a6a);c.lerp(_c2,smooth(-.5,-4,y));},
   build(c){addTown(-32,-5,5,{grid:3});addTrees(90,(x,z)=>okTree(x,z,3.5));
-    c.water=makeWater(0x2f6f8a,.86);residents(20);rescuers(3);
+    c.water=makeWater(0x2f6f8a,.86);scatterVictims(18);
     makeVehicle(0xf4f4f4,[0xff2a2a,0x2a6bff],-55,-20,Math.PI/2);makeHeli(0xd23a2a,()=>[-10,0],50,40,.3);
     c.boats=[];for(let k=0;k<3;k++){const g=new THREE.Group();const hull=new THREE.Mesh(G.box,M(pick([0xf0f0f0,0x2a5a8a,0xc04a2a])));hull.scale.set(4,1,1.8);
       const cab=new THREE.Mesh(G.box,M(0xeeeeee));cab.scale.set(1.4,1,1.4);cab.position.y=.9;g.add(hull,cab);modeGroup.add(g);c.boats.push({g,x:R(45,85),z:R(-60,60)});}
@@ -487,7 +459,7 @@ const MODES=[
   status(c){if(!c.active)return 'Water receding from the coast';return c.wx>55?'Sea pulling back from the shore':c.wx>-5?'Wave reaching the coast':'Water surging inland';}
 },
 { id:'landslide',name:'Landslide',icon:'⛰️',
-  desc:'Boulders and mud break loose from the mountainside and slide down a channel toward the edge of town, damaging the nearest buildings.',
+  desc:'Boulders and mud break loose from the mountainside and slide down a channel toward the edge of town, damaging the nearest buildings. Unconscious survivors are spread across the slope and the valley.',
   tip:'Move out of the slide path quickly, sideways rather than downhill. Listen for rumbling, cracking trees or rocks knocking together.',
   sky:0xa9b4ba,fogNear:80,fogFar:320,hemiGround:0x54483a,
   town:[0,32],townR:27,safe:[-74,62],camTarget:[0,0],camR:170,
@@ -496,7 +468,7 @@ const MODES=[
   color(c,x,y,z,s){natural(c,x,y,z,s,{});const k=smooth(22,13,Math.abs(x))*smooth(12,4,z)*smooth(-95,-85,z);_c2.set(0x6b4f35);c.lerp(_c2,k*.9);},
   build(c){addTown(0,32,this._townLevel,{damage:(x,z)=>z<26?.9:0});
     c.trees=addTrees(110,(x,z)=>okTree(x,z)&&(Math.abs(x)>24||z>14));
-    residents(18);rescuers(5);makeVehicle(0xe8b820,[0xffb000,0xffb000],-30,8,0);
+    scatterVictims(18);makeVehicle(0xe8b820,[0xffb000,0xffb000],-30,8,0);
     c.rocks=[];for(let k=0;k<40;k++){const s=R(.8,3),m=new THREE.Mesh(G.rock,M(pick([0x7b7066,0x6a5f55,0x8a7f72])));m.scale.setScalar(s);m.castShadow=true;modeGroup.add(m);
       const r={m,s,x:0,z:0,vx:0,vz:0,rest:R(0,6),stopZ:0};c.rocks.push(r);this.respawnRock(r);r.z=R(-88,0);}
     const moving=()=>c.rocks.filter(r=>r.rest<=0);
@@ -517,10 +489,10 @@ const MODES=[
   status(c){return `${c.moving||0} boulders sliding downhill`;}
 },
 { id:'blizzard',name:'Blizzard',icon:'❄️',
-  desc:'Heavy snow and strong wind cut visibility. A plow clears the main street, a car sits stuck in a drift and residents push through to the warming shelter.',
+  desc:'Heavy snow and strong wind cut visibility. A plow clears the main street, a car sits stuck in a drift and people who collapsed from the cold lie scattered in the snow.',
   tip:'Stay indoors if you can. If stranded in a car, stay with it, run the engine in short bursts and keep the exhaust pipe clear of snow.',
   sky:0xd4dce3,fog:0xdde4ea,fogNear:20,fogFar:150,hemiSky:0xeef4ff,hemiGround:0x9aa6b4,hemiI:.9,sun:0xeef4ff,sunI:.5,
-  town:[0,0],townR:27,safe:[-58,54],huddle:true,
+  town:[0,0],townR:27,safe:[-58,54],
   raw:(x,z)=>hills(x,z,16)+fbm(x*.07,z*.07,2)*2,
   color(c,x,y,z,s){const n=vnoise(x*.08,z*.08);c.set(0xeef2f6);_c2.set(0xc4d2df);c.lerp(_c2,n*.5);_c2.set(0x6d6f72);c.lerp(_c2,smooth(.32,.55,s)*.6);},
   speedMul(){return .5;},
@@ -529,7 +501,7 @@ const MODES=[
     const car=makeVehicle(0x3366aa,null,-8,12,.3);car.rotation.z=.12;
     const drift=new THREE.Mesh(G.blob,M(0xf3f6f8));drift.scale.set(4,1.6,3);drift.position.set(-9,this._townLevel,13);modeGroup.add(drift);
     c.plow=makeVehicle(0xe8a317,[0xffb000,0xffb000],0,0,0);
-    residents(16);rescuers(3);
+    scatterVictims(16);
     precip(5000,{color:0xffffff,size:.75,opacity:.9,fall:7,wind:12,height:70,spread:170});
   },
   update(dt,t,c){scene.fog.far=220/(.6+INT);scene.fog.near=scene.fog.far*.12;
@@ -567,22 +539,22 @@ MODES.forEach((m,i)=>{const b=document.createElement('button');b.className='mode
   b.innerHTML=`<span class="ic" aria-hidden="true">${m.icon}</span><span>${m.name}</span>`;
   b.addEventListener('click',()=>setMode(i));dock.appendChild(b);});
 function setMode(i){
-  clearMode();curIdx=i;const m=MODES[i];curMode=m;ctx={};evacuated=0;modeT=0;seed=1234+i*977;
+  clearMode();curIdx=i;const m=MODES[i];curMode=m;ctx={};modeT=0;seed=1234+i*977;
   H=makeH(m);
   scene.background=new THREE.Color(m.sky);scene.fog=new THREE.Fog(m.fog??m.sky,m.fogNear,m.fogFar);
   hemi.color.set(m.hemiSky??0xffffff);hemi.groundColor.set(m.hemiGround??0x555544);hemi.intensity=m.hemiI??.75;
   sun.color.set(m.sun??0xffffff);sun.intensity=m.sunI??.85;
-  buildTerrain(m);addSafeZone(m.safe[0],m.safe[1]);m.build(ctx);
+  buildTerrain(m);m.build(ctx);
   resetView();
   $('mIcon').textContent=m.icon;$('mName').textContent=m.name;$('mDesc').textContent=m.desc;$('mTip').textContent=m.tip;
   [...dock.children].forEach((b,k)=>b.setAttribute('aria-current',k===i?'true':'false'));
   dock.children[i].scrollIntoView({block:'nearest',inline:'nearest'});
   updateStatus();
 }
-function updateStatus(){$('mStatus').textContent=curMode.status(ctx);$('evac').textContent=agents.length;}
+function updateStatus(){$('mStatus').textContent=curMode.status(ctx);$('waiting').textContent=victimList.length;}
 $('intensity').addEventListener('input',e=>INT=parseFloat(e.target.value));
 const toggle=(id,get,set)=>{const b=$(id);b.setAttribute('aria-pressed',String(get()));b.addEventListener('click',()=>{set(!get());b.setAttribute('aria-pressed',String(get()));});};
-toggle('bPeople',()=>showPeople,v=>{showPeople=v;agents.forEach(a=>a.g.visible=v);});
+toggle('bPeople',()=>showPeople,v=>{showPeople=v;agents.forEach(a=>a.g.visible=v);victimList.forEach(x=>x.g.visible=v);});
 toggle('bRotate',()=>orbit.auto,v=>orbit.auto=v);
 toggle('bPause',()=>paused,v=>paused=v);
 $('bReset').addEventListener('click',resetView);

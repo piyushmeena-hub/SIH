@@ -35,7 +35,7 @@ h1{font-family:"Barlow Condensed","Arial Narrow",sans-serif;font-weight:700;font
 .card-body .tip strong{color:var(--ink)}
 .legend{list-style:none;padding:0;margin:.8rem 0 0;display:flex;gap:14px;flex-wrap:wrap;font-size:.85rem;color:var(--muted)}
 .sw{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px;vertical-align:-1px}
-.sw.res{background:linear-gradient(90deg,#3b6ea8 50%,#c9b458 50%)}
+.sw.vic{background:#ff3b30;box-shadow:0 0 0 2px rgba(255,59,48,.3)}
 .sw.resc{background:#ff7a1a}
 .sw.safe{border:2px solid var(--safe)}
 .count{font-variant-numeric:tabular-nums}
