@@ -811,8 +811,9 @@ function loadUI(opts) {
   ctx.__document = document;
 
   for (const src of scripts) {
-    const file = path.join(ROOT, src);
-    vm.runInContext(fs.readFileSync(file, 'utf8'), ctx, { filename: src });
+    const cleanSrc = src.split('?')[0];
+    const file = path.join(ROOT, cleanSrc);
+    vm.runInContext(fs.readFileSync(file, 'utf8'), ctx, { filename: cleanSrc });
   }
 
   return {

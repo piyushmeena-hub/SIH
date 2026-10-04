@@ -33,10 +33,11 @@ An integrated **3D & 2D Disaster Simulation Platform** built with **React**, **T
 ## Running Locally
 
 ```bash
-cd /Users/admin/Desktop/SIHnewproject && npm run dev
+npm install
+npm run dev
 ```
 
-Other scripts (run inside `/Users/admin/Desktop/SIHnewproject`):
+Other scripts:
 
 ```bash
 npm run lint

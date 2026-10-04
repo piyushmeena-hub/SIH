@@ -10,6 +10,24 @@ function fmtClock(sec) {
   return `T+${String(m).padStart(2, '0')}:${String(r).padStart(2, '0')}`;
 }
 
+function getRichterCategory(m) {
+  if (m < 2.0) return 'Micro';
+  if (m < 4.0) return 'Minor';
+  if (m < 5.0) return 'Light';
+  if (m < 6.0) return 'Moderate';
+  if (m < 7.0) return 'Strong';
+  if (m < 8.0) return 'Major';
+  return 'Great';
+}
+
+function getDamageTierLabel(magnitude) {
+  if (magnitude < 4.0) return { tier: 'Tier 1: No Damage', desc: 'Elastic sway only (intact)', className: 'tier-1' };
+  if (magnitude < 5.5) return { tier: 'Tier 2: Minor Damage', desc: 'Hairline cracks & broken windows', className: 'tier-2' };
+  if (magnitude < 7.0) return { tier: 'Tier 3: Moderate Damage', desc: 'Visible tilt, settling & dust', className: 'tier-3' };
+  if (magnitude < 8.2) return { tier: 'Tier 4: Partial Collapse', desc: 'Upper shearing & severe tilt', className: 'tier-4' };
+  return { tier: 'Tier 5: Catastrophic', desc: 'Pancake collapse into rubble piles', className: 'tier-5' };
+}
+
 export default function App() {
   const canvasRef = useRef(null);
   const engineRef = useRef(null);
@@ -26,7 +44,58 @@ export default function App() {
   const [paused, setPaused] = useState(false);
   const [timeScale, setTimeScale] = useState(5);
   const [infoOpen, setInfoOpen] = useState(() => window.innerWidth >= 640);
-  const [hudStats, setHudStats] = useState({ status: 'Aftershock lull', waiting: 0 });
+  const [hudStats, setHudStats] = useState({
+    status: 'M7.0 event complete - Partial collapse: Upper-story shearing & tilt',
+    waiting: 0,
+  });
+
+  // Single-burst Earthquake Event State (Initial state: post-M7.0 aftermath)
+  const [earthquakeState, setEarthquakeState] = useState({
+    active: false,
+    elapsed: 10.0,
+    duration: 10.0,
+    magnitude: 7.0,
+    pga: 0.08 * Math.pow(10, 0.28 * (7.0 - 5.0)),
+  });
+
+  const handleEarthquakeUpdate = useCallback(eq => {
+    if (!eq) return;
+    setEarthquakeState(prev => {
+      if (
+        prev.active === eq.active &&
+        Math.abs(prev.elapsed - eq.elapsed) < 0.08 &&
+        prev.magnitude === eq.magnitude &&
+        Math.abs(prev.pga - eq.pga) < 0.005
+      ) {
+        return prev;
+      }
+      return {
+        active: eq.active,
+        elapsed: eq.elapsed,
+        duration: eq.duration || 10.0,
+        magnitude: eq.magnitude,
+        pga: eq.pga,
+      };
+    });
+  }, []);
+
+  const handleTriggerEarthquake = useCallback(() => {
+    engineRef.current?.triggerEarthquake();
+  }, []);
+
+  const handleResetEarthquakeBuildings = useCallback(() => {
+    engineRef.current?.resetEarthquakeBuildings();
+  }, []);
+
+  const handleEarthquakeMagnitudeChange = useCallback(e => {
+    const val = parseFloat(e.target.value);
+    setEarthquakeState(prev => ({
+      ...prev,
+      magnitude: val,
+      pga: 0.08 * Math.pow(10, 0.28 * (val - 5.0)),
+    }));
+    engineRef.current?.setEarthquakeMagnitude(val);
+  }, []);
 
   // Throttled snapshot of SharedSimulationState for React HUD (5 Hz max)
   const [simSnapshot, setSimSnapshot] = useState(() => ({
@@ -94,7 +163,8 @@ export default function App() {
     let engine = null;
     try {
       engine = createDisasterEngine(canvas, {
-        onStatsUpdate: handleStatsUpdate
+        onStatsUpdate: handleStatsUpdate,
+        onEarthquakeUpdate: handleEarthquakeUpdate,
       });
       engineRef.current = engine;
       setIsLoading(false);
@@ -109,7 +179,7 @@ export default function App() {
         engineRef.current = null;
       }
     };
-  }, [handleStatsUpdate]);
+  }, [handleStatsUpdate, handleEarthquakeUpdate]);
 
   const handleViewDimension = useCallback(dim => {
     setViewMode(dim);
@@ -414,6 +484,73 @@ export default function App() {
                     </button>
                   ))}
                 </div>
+                {currentMode.id === 'earthquake' && (
+                  <div className="quake-controls-panel" id="quakeControlsPanel">
+                    <div className="quake-header-row">
+                      <button
+                        className={`chip quake-trigger-btn ${earthquakeState.active ? 'quake-active' : ''}`}
+                        type="button"
+                        id="bTriggerEarthquake"
+                        disabled={earthquakeState.active}
+                        onClick={handleTriggerEarthquake}
+                        title={earthquakeState.active ? `Earthquake active (${Math.max(0, earthquakeState.duration - earthquakeState.elapsed).toFixed(1)}s left)` : `Trigger 10s M${earthquakeState.magnitude.toFixed(1)} Earthquake`}
+                      >
+                        <span className="quake-pulse-dot" aria-hidden="true" />
+                        {earthquakeState.active
+                          ? `Shaking: ${Math.max(0, earthquakeState.duration - earthquakeState.elapsed).toFixed(1)}s left`
+                          : 'Start Earthquake (10s)'}
+                      </button>
+                      <button
+                        className="chip quake-reset-btn"
+                        type="button"
+                        id="bResetEarthquake"
+                        disabled={earthquakeState.active}
+                        onClick={handleResetEarthquakeBuildings}
+                        title="Reset city buildings and rubble to pristine condition"
+                      >
+                        Reset City
+                      </button>
+                      <span className="pga-badge" title="Peak Ground Acceleration">
+                        PGA: ~{earthquakeState.pga.toFixed(2)}g
+                      </span>
+                    </div>
+
+                    <label className="range quake-magnitude-range">
+                      <span>
+                        Magnitude: <b>M {earthquakeState.magnitude.toFixed(1)}</b> <small>({getRichterCategory(earthquakeState.magnitude)})</small>
+                      </span>
+                      <input
+                        type="range"
+                        id="earthquakeMagnitude"
+                        min="1.0"
+                        max="9.0"
+                        step="0.1"
+                        value={earthquakeState.magnitude}
+                        disabled={earthquakeState.active}
+                        onChange={handleEarthquakeMagnitudeChange}
+                      />
+                    </label>
+
+                    {(() => {
+                      const tierInfo = getDamageTierLabel(earthquakeState.magnitude);
+                      return (
+                        <div className={`quake-tier-badge ${tierInfo.className}`} title={tierInfo.desc}>
+                          <span className="tier-tag">{tierInfo.tier}</span>
+                          <span className="tier-desc">{tierInfo.desc}</span>
+                        </div>
+                      );
+                    })()}
+
+                    {earthquakeState.active && (
+                      <div className="quake-progress-track" role="progressbar" aria-valuenow={earthquakeState.elapsed} aria-valuemin={0} aria-valuemax={earthquakeState.duration}>
+                        <div
+                          className="quake-progress-fill"
+                          style={{ width: `${Math.min(100, (earthquakeState.elapsed / earthquakeState.duration) * 100)}%` }}
+                        />
+                      </div>
+                    )}
+                  </div>
+                )}
                 <label className="range">
                   <span>Intensity ({intensity.toFixed(2)}×)</span>
                   <input
