@@ -586,7 +586,7 @@ export default function App() {
       </nav>
 
       <p className="hint" hidden={!is3D}>
-        Drag to orbit · Scroll to zoom · Click any Drone or Survivor/PoI in 3D · Press 1–8 to switch disasters
+        Drag to orbit · Scroll to zoom · Click any Drone or Survivor/PoI in 3D · Press 1–7 to switch disasters
       </p>
     </>
   );

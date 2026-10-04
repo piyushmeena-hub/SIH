@@ -291,7 +291,7 @@ function drawDisasterHazards(ctx, cv, view, s) {
     if (hz.kind === 'flood' || hz.kind === 'tsunami') {
       stroke = 'rgba(56,189,248,0.45)';
       fill = 'rgba(56,189,248,0.08)';
-    } else if (hz.kind === 'tornado' || hz.kind === 'blizzard') {
+    } else if (hz.kind === 'tornado') {
       stroke = 'rgba(148,163,184,0.45)';
       fill = 'rgba(148,163,184,0.08)';
     }

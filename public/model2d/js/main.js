@@ -1623,7 +1623,6 @@
           volcano:    { spd: 5.0, dirDeg: 75, envMul: 0.84 },
           tsunami:    { spd: 6.5, dirDeg: 90, envMul: 0.90 },
           landslide:  { spd: 4.0, dirDeg: 60, envMul: 0.94 },
-          blizzard:   { spd: 10.0, dirDeg: 165, envMul: 0.82 },
         };
         const cfg = disasterWindMap[dType] || disasterWindMap.earthquake;
         const effWindSpd = Math.min(20, Math.round(cfg.spd * (0.65 + 0.45 * inten)));

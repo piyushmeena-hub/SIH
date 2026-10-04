@@ -2,7 +2,7 @@
 
 An integrated **3D & 2D Disaster Simulation Platform** built with **React**, **Three.js**, and **Vite**:
 
-- **3D Model**: Interactive 3D WebGL terrain simulator showing eight natural disasters (`Earthquake`, `Flood`, `Wildfire`, `Tornado`, `Volcano`, `Tsunami`, `Landslide`, `Blizzard`), procedural towns, emergency vehicles, helicopters/boats, and unconscious survivors waiting for help.
+- **3D Model**: Interactive 3D WebGL terrain simulator showing seven natural disasters (`Earthquake`, `Flood`, `Wildfire`, `Tornado`, `Volcano`, `Tsunami`, `Landslide`), procedural towns, emergency vehicles, helicopters/boats, and unconscious survivors waiting for help.
 - **2D Model**: Full **Drone Swarm Relay Simulator** (`testingfortechfest`) featuring C2 mesh link planning, real radio hardware specs, terrain/OSM building obstruction, RF interference/jamming, mission & DDIL scenario libraries, RSSI field calibration, ATAK/CoT export/import, SITL vehicle bridge, and Disaster PoI detection.
 
 ---
@@ -12,7 +12,7 @@ An integrated **3D & 2D Disaster Simulation Platform** built with **React**, **T
 ### 3D Model
 - **Drag** to orbit the camera around the terrain
 - **Scroll** or **pinch** to zoom in and out
-- **1–8 keys** or the bottom dock to switch disasters
+- **1–7 keys** or the bottom dock to switch disasters
 - **3D Model / 2D Model** toggle to switch between the 3D WebGL view and the 2D Drone Swarm Relay Simulator
 - **Intensity** slider to make the disaster stronger or milder
 - **People** button to show or hide people in the scene

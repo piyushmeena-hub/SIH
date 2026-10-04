@@ -40,8 +40,9 @@ class SharedSimulationStore {
 
       world: {
         bounds: { minX: -140, maxX: 140, minZ: -140, maxZ: 140, width: 280 },
+        cityBounds: { centerX: 0, centerZ: 0, halfSize: 54, width: 108, depth: 108, minX: -54, maxX: 54, minZ: -54, maxZ: 54 },
         terrainType: 'earthquake',
-        safeZone3D: { x: 66, z: 52 },
+        safeZone3D: { x: 82, z: 72 },
         townCenter3D: { x: 0, z: 0 },
         obstacles: [],
         buildings: [],
@@ -239,6 +240,7 @@ class SharedSimulationStore {
     intensity,
     safeZone3D,
     townCenter3D,
+    cityBounds3D,
     buildings3D = [],
     survivors3D = [],
     hazardZones3D = {},
@@ -256,6 +258,7 @@ class SharedSimulationStore {
     this.state.world.terrainType = this.state.mission.disasterType;
     if (safeZone3D) this.state.world.safeZone3D = safeZone3D;
     if (townCenter3D) this.state.world.townCenter3D = townCenter3D;
+    if (cityBounds3D) this.state.world.cityBounds = cityBounds3D;
 
     // Map 3D buildings into both 3D and 2D coordinates for 2D LOS & obstacle avoidance
     this.state.world.buildings = buildings3D.map((b, idx) => {

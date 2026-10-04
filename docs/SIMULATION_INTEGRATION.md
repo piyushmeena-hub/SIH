@@ -20,8 +20,8 @@ The project unifies two specialized simulation engines into a single coordinated
 | **RF Network & Relay Chain** | **2D Network Engine** (`public/model2d/js/net.js`, `radios.js`) | Link budget (dB margin), multi-hop relay slot placement, packet delivery, video backhaul scheduling |
 | **PoI Assignment & Survey** | **2D PoI Store** (`public/model2d/js/poi.js`) | Priority queue (`CRITICAL`, `HIGH`, `MEDIUM`, `LOW`), UAV assignment, survey progress (`0–100%`), GCS packet acknowledgement |
 | **EW Jammers & GPS Denial** | **2D Adversary / Nav Engine** (`public/model2d/js/adversary.js`, `gpsnav.js`) | RF jammer ERP & denial radius, GNSS outage zones, dead-reckoning INS drift |
-| **Physical Disaster Terrain** | **3D Disaster Engine** (`src/simulation/disasterEngine.js`) | 8 procedural disaster environments (Earthquake, Flood, Wildfire, Tornado, Volcano, Tsunami, Landslide, Blizzard), 3D buildings, rubble, water/fire/wind physics |
-| **Survivors (`SURV-01`..`SURV-06`)** | **3D Disaster Engine ↔ 2D PoI Store** | Spawned on 3D streets/rooftops by `scatterVictims()`, registered into `SharedSimulationState`, and synchronized into 2D `PoiStore` as `CRITICAL` rescue objectives |
+| **Physical Disaster Terrain** | **3D Disaster Engine** (`src/simulation/disasterEngine.js`) | 7 procedural disaster environments (Earthquake, Flood, Wildfire, Tornado, Volcano, Tsunami, Landslide), 3D buildings, rubble, water/fire/wind physics |
+| **Survivors (`SURV-01`..`SURV-08`)** | **3D Disaster Engine ↔ 2D PoI Store** | Spawned on 3D streets/rooftops by `scatterVictims()`, registered into `SharedSimulationState`, and synchronized into 2D `PoiStore` as `CRITICAL` rescue objectives |
 | **Mission Clock & Selection** | **Shared Simulation Store** (`src/integration/simulationStore.js`) | Unified `elapsedTime`, `timeScale` (`1×`, `5×`, `30×`, `120×`), `paused`, `selectedDroneId`, and `selectedPoiId` |
 
 ---
@@ -34,7 +34,7 @@ The project unifies two specialized simulation engines into a single coordinated
 {
   mission: {
     active: true,
-    disasterType: "earthquake",   // earthquake | flood | wildfire | tornado | volcano | tsunami | landslide | blizzard
+    disasterType: "earthquake",   // earthquake | flood | wildfire | tornado | volcano | tsunami | landslide
     disasterIndex: 0,
     disasterTitle: "EARTHQUAKE",
     intensity: 1.0,               // 0.3 .. 1.8

@@ -1,6 +1,19 @@
 import * as THREE from 'three';
 import sharedSim from '../integration/simulationStore';
 
+export const CITY_CONFIG = {
+  scaleMultiplier: 2.0,
+  defaultGrid: 8,         // 8x8 urban blocks (was 4x4) -> 108x108 footprint (2.0x of 54x54)
+  compactGrid: 6,         // 6x6 urban blocks (was 3x3) -> 84x84 footprint (2.0x of 42x42)
+  blockSpacing: 12.6,
+  compactSpacing: 12.8,
+  platformPadding: 3.6,
+  avenueHalfGap: 1.4,
+  openLotProbability: 0.14,
+  survivorCount: 8,
+  minSurvivorSpacing: 14.0
+};
+
 export const MODES_META = [
   {
     id: 'earthquake',
@@ -50,13 +63,6 @@ export const MODES_META = [
     icon: '⛰️',
     desc: 'Boulders and mud break loose from the mountainside and slide down a channel toward the edge of town, damaging the nearest buildings. Unconscious survivors lie in the streets below the slide.',
     tip: 'Move out of the slide path quickly, sideways rather than downhill. Listen for rumbling, cracking trees or rocks knocking together.'
-  },
-  {
-    id: 'blizzard',
-    name: 'Blizzard',
-    icon: '❄️',
-    desc: 'Heavy snow and strong wind cut visibility. A plow clears the main street, a car sits stuck in a drift and people who collapsed from the cold lie in the snowy streets.',
-    tip: 'Stay indoors if you can. If stranded in a car, stay with it, run the engine in short bursts and keep the exhaust pipe clear of snow.'
   }
 ];
 
@@ -461,19 +467,55 @@ export function createDisasterEngine(canvas, { onStatsUpdate } = {}) {
   }
 
   function addTown(cx, cz, level, o = {}) {
-    const grid = o.grid || 4, sp = 12, half = (grid * sp) / 2 + 3;
+    const isCompact = Boolean(o.compact || o.grid === 3 || o.grid === CITY_CONFIG.compactGrid);
+    const grid = o.grid
+      ? (o.grid <= 4 ? o.grid * CITY_CONFIG.scaleMultiplier : o.grid)
+      : (isCompact ? CITY_CONFIG.compactGrid : CITY_CONFIG.defaultGrid);
+    const sp = isCompact ? CITY_CONFIG.compactSpacing : CITY_CONFIG.blockSpacing;
+    const half = Math.round((grid * sp) / 2 + CITY_CONFIG.platformPadding);
     curMode._townHalf = half;
+    curMode.cityBounds = {
+      centerX: cx,
+      centerZ: cz,
+      halfSize: half,
+      width: half * 2,
+      depth: half * 2,
+      minX: cx - half,
+      maxX: cx + half,
+      minZ: cz - half,
+      maxZ: cz + half
+    };
+
     const pg = new THREE.PlaneGeometry(half * 2, half * 2);
     pg.rotateX(-Math.PI / 2);
     const ground = new THREE.Mesh(pg, M(o.snow ? 0xe3e9ee : 0x5b5f62));
     ground.position.set(cx, level + 0.06, cz);
     ground.receiveShadow = true;
     modeGroup.add(ground);
+
+    // Main cross-avenue road strips across the expanded urban district
+    const roadMat = M(o.snow ? 0xcfd8e0 : 0x484c50);
+    const roadEWGeo = new THREE.PlaneGeometry(half * 2 - 2, 5.2);
+    roadEWGeo.rotateX(-Math.PI / 2);
+    const roadEW = new THREE.Mesh(roadEWGeo, roadMat);
+    roadEW.position.set(cx, level + 0.08, cz);
+    roadEW.receiveShadow = true;
+    const roadNSGeo = new THREE.PlaneGeometry(5.2, half * 2 - 2);
+    roadNSGeo.rotateX(-Math.PI / 2);
+    const roadNS = new THREE.Mesh(roadNSGeo, roadMat);
+    roadNS.position.set(cx, level + 0.085, cz);
+    roadNS.receiveShadow = true;
+    modeGroup.add(roadEW, roadNS);
+
     for (let i = 0; i < grid; i++) {
       for (let j = 0; j < grid; j++) {
-        const x = cx + (i - (grid - 1) / 2) * sp, z = cz + (j - (grid - 1) / 2) * sp;
-        if (rand() < 0.1) continue;
-        const w = R(5, 8.5), d = R(5, 8.5), h = R(4, 15);
+        const aveX = CITY_CONFIG.avenueHalfGap * (i >= grid / 2 ? 1 : -1);
+        const aveZ = CITY_CONFIG.avenueHalfGap * (j >= grid / 2 ? 1 : -1);
+        const x = cx + (i - (grid - 1) / 2) * sp + aveX + R(-0.55, 0.55);
+        const z = cz + (j - (grid - 1) / 2) * sp + aveZ + R(-0.55, 0.55);
+        if (rand() < (isCompact ? 0.11 : CITY_CONFIG.openLotProbability)) continue;
+        const distNorm = Math.hypot(i - (grid - 1) / 2, j - (grid - 1) / 2) / (grid * 0.7);
+        const w = R(5, 8.5), d = R(5, 8.5), h = R(4.5, 15.5) * (1.12 - distNorm * 0.24);
         const dmg = typeof o.damage === 'function' ? o.damage(x, z) : (o.damage || 0);
         if (rand() < dmg * 0.3) {
           rubble(x, z, w, d, level);
@@ -720,32 +762,44 @@ export function createDisasterEngine(canvas, { onStatsUpdate } = {}) {
   }
 
   function scatterVictims() {
-    const m = curMode, [cx, cz] = m.town, half = (m._townHalf || m.townR) - 1.6;
+    const m = curMode, [cx, cz] = m.town, half = (m._townHalf || m.townR) - 2.2;
+    const targetCount = CITY_CONFIG.survivorCount;
     if (m.roofVictims) {
-      const roofs = buildings.filter(b => b.mesh && !b.taken).sort(() => rand() - 0.5).slice(0, 6);
-      roofs.forEach(b => {
+      const avail = buildings.filter(b => b.mesh && !b.taken).sort(() => rand() - 0.5);
+      const chosen = [];
+      for (const b of avail) {
+        if (chosen.length >= targetCount) break;
+        if (chosen.every(c => Math.hypot(c.x - b.x, c.z - b.z) >= CITY_CONFIG.minSurvivorSpacing)) {
+          chosen.push(b);
+        }
+      }
+      for (const b of avail) {
+        if (chosen.length >= targetCount) break;
+        if (!chosen.includes(b)) chosen.push(b);
+      }
+      chosen.forEach(b => {
         const th = rand() * 6.28;
         makeVictim(b.x + 1.1 * Math.sin(th), b.z + 1.1 * Math.cos(th), th, b.top);
       });
       return;
     }
-    const n = Math.min(6, Math.max(4, Math.round(((2 * half) ** 2) / 210))), cells = Math.ceil(Math.sqrt(n * 2.5)), step = (2 * half) / cells, cand = [];
+    const n = targetCount, cells = Math.ceil(Math.sqrt(n * 3)), step = (2 * half) / cells, cand = [];
     for (let i = 0; i < cells; i++) {
       for (let j = 0; j < cells; j++) {
-        cand.push([cx - half + (i + R(0.1, 0.9)) * step, cz - half + (j + R(0.1, 0.9)) * step]);
+        cand.push([cx - half + (i + R(0.12, 0.88)) * step, cz - half + (j + R(0.12, 0.88)) * step]);
       }
     }
     cand.sort(() => rand() - 0.5);
     const placed = [], inside = (x, z) => Math.abs(x - cx) < half && Math.abs(z - cz) < half;
     for (const [x0, z0] of cand) {
       if (placed.length >= n) break;
-      for (let k = 0; k < 14; k++) {
-        const x = x0 + R(-step * 0.35, step * 0.35), z = z0 + R(-step * 0.35, step * 0.35), th = rand() * 6.28;
+      for (let k = 0; k < 18; k++) {
+        const x = x0 + R(-step * 0.4, step * 0.4), z = z0 + R(-step * 0.4, step * 0.4), th = rand() * 6.28;
         const sx = Math.sin(th), sz = Math.cos(th);
         const pts = [[x, z], [x - 1.15 * sx, z - 1.15 * sz], [x - 2.4 * sx, z - 2.4 * sz]];
-        if (pts.some(([px, pz]) => !inside(px, pz) || blocked(px, pz, 0.35))) continue;
+        if (pts.some(([px, pz]) => !inside(px, pz) || blocked(px, pz, 0.45))) continue;
         const mx = x - 1.15 * sx, mz = z - 1.15 * sz;
-        if (placed.some(q => Math.hypot(q[0] - mx, q[1] - mz) < 4.5)) continue;
+        if (placed.some(q => Math.hypot(q[0] - mx, q[1] - mz) < CITY_CONFIG.minSurvivorSpacing)) continue;
         placed.push([mx, mz]);
         makeVictim(x, z, th);
         break;
@@ -816,7 +870,7 @@ export function createDisasterEngine(canvas, { onStatsUpdate } = {}) {
     {
       ...MODES_META[0],
       sky: 0xb6c0c6, fogNear: 90, fogFar: 330, hemiGround: 0x6b5d48,
-      town: [0, 0], townR: 27, safe: [66, 52],
+      town: [0, 0], townR: 54, safe: [82, 72], camR: 162,
       raw: (x, z) => hills(x, z, 14) + fbm(x * 0.08, z * 0.08, 2) * 1.2,
       build(c) {
         const L = this._townLevel;
@@ -837,10 +891,11 @@ export function createDisasterEngine(canvas, { onStatsUpdate } = {}) {
         fis.instanceMatrix.needsUpdate = true;
         modeGroup.add(fis);
         addTrees(90, (x, z) => okTree(x, z));
-        makeVehicle(0xf4f4f4, [0xff2a2a, 0x2a6bff], 27, 8, Math.PI / 2);
-        makeVehicle(0xc0262b, [0xff2a2a, 0xff2a2a], 27, -6, Math.PI / 2);
+        makeVehicle(0xf4f4f4, [0xff2a2a, 0x2a6bff], 56, 14, Math.PI / 2);
+        makeVehicle(0xc0262b, [0xff2a2a, 0xff2a2a], 56, -12, Math.PI / 2);
+        makeVehicle(0xf4f4f4, [0xff2a2a, 0x2a6bff], -56, 10, -Math.PI / 2);
         const rub = buildings.filter(b => b.rubble), src = rub.length ? rub : buildings;
-        new Particles(380, {
+        new Particles(520, {
           color: 0x9c8b74, size: 3.2, opacity: 0.35, prewarm: true,
           spawn: (i, p) => {
             const b = pick(src);
@@ -849,7 +904,7 @@ export function createDisasterEngine(canvas, { onStatsUpdate } = {}) {
         });
         c.debris = [];
         const standing = buildings.filter(b => b.mesh);
-        for (let k = 0; k < 20; k++) {
+        for (let k = 0; k < 32; k++) {
           const m = new THREE.Mesh(G.box, M(0x8d857b));
           m.scale.set(R(0.4, 1), R(0.3, 0.7), R(0.4, 1));
           m.castShadow = true;
@@ -893,9 +948,9 @@ export function createDisasterEngine(canvas, { onStatsUpdate } = {}) {
     {
       ...MODES_META[1],
       sky: 0x8a97a3, fogNear: 60, fogFar: 280, hemiGround: 0x4a4a3c, sunI: 0.55,
-      town: [0, -4], townLevel: 0.6, townR: 27, safe: [12, 66],
+      town: [0, -4], townLevel: 0.6, townR: 54, safe: [18, 86], camR: 162,
       roofVictims: true,
-      raw: (x, z) => hills(x, z, 5) + Math.pow(Math.abs(z) / 55, 1.8) * 16 - 1.5,
+      raw: (x, z) => hills(x, z, 5) + Math.pow(Math.abs(z) / 72, 1.8) * 16 - 1.5,
       color(c, x, y, z, s) {
         natural(c, x, y, z, s, { grass: 0x56803a });
         _c2.set(0x6d6248);
@@ -906,13 +961,13 @@ export function createDisasterEngine(canvas, { onStatsUpdate } = {}) {
         addTrees(100, (x, z) => okTree(x, z, 3));
         c.L = 0.3;
         c.water = makeWater(0x7b6b4c, 0.88);
-        const tall = buildings.filter(b => b.mesh).sort(() => rand() - 0.5).slice(0, 4);
+        const tall = buildings.filter(b => b.mesh).sort(() => rand() - 0.5).slice(0, 6);
         tall.forEach(b => {
           b.taken = true;
           addAgent('resident', b.x + R(-1.5, 1.5), b.z + R(-1.5, 1.5), { state: 'wave', fixedY: b.top });
         });
         c.boats = [];
-        for (let k = 0; k < 3; k++) {
+        for (let k = 0; k < 4; k++) {
           const g = new THREE.Group();
           const hull = new THREE.Mesh(G.box, M(0xff8a1a));
           hull.scale.set(3.6, 0.8, 1.7);
@@ -926,9 +981,9 @@ export function createDisasterEngine(canvas, { onStatsUpdate } = {}) {
             g.add(p);
           });
           modeGroup.add(g);
-          c.boats.push({ g, r: R(12, 26), ang: rand() * 6.28, sp: R(0.15, 0.3) * (rand() < 0.5 ? -1 : 1) });
+          c.boats.push({ g, r: R(16, 48), ang: rand() * 6.28, sp: R(0.15, 0.3) * (rand() < 0.5 ? -1 : 1) });
         }
-        makeHeli(0xd23a2a, () => [0, -4], 32, 36, 0.35);
+        makeHeli(0xd23a2a, () => [0, -4], 48, 38, 0.35);
         precip(2600, { color: 0xb9c8d6, size: 0.45, opacity: 0.6, fall: 38, wind: 3 });
       },
       update(dt, t, c) {
@@ -948,13 +1003,13 @@ export function createDisasterEngine(canvas, { onStatsUpdate } = {}) {
     {
       ...MODES_META[2],
       sky: 0xc79a72, fogNear: 60, fogFar: 270, hemiSky: 0xffd2a8, hemiGround: 0x5a4030, sun: 0xffb070,
-      town: [35, 30], townR: 21, safe: [96, -40],
+      town: [36, 26], townR: 42, safe: [98, -52], camR: 162,
       raw: (x, z) => hills(x, z, 18) + 6,
       color(c, x, y, z, s) {
         natural(c, x, y, z, s, { grass: 0x6a7d3a, dry: 0xa08a4a });
       },
       build(c) {
-        addTown(35, 30, this._townLevel, { grid: 3 });
+        addTown(36, 26, this._townLevel, { compact: true });
         c.trees = addTrees(240, (x, z) => okTree(x, z), undefined, true);
         c.trees.forEach(t => (t.off = (vnoise(t.x * 0.05, t.z * 0.05) - 0.5) * 24));
         c.burning = [];
@@ -965,8 +1020,9 @@ export function createDisasterEngine(canvas, { onStatsUpdate } = {}) {
           bt: M(0x141110),
           tk: M(0x6b4a2f)
         };
-        makeVehicle(0xc0262b, [0xff2a2a, 0xff2a2a], 14, 40, 0);
-        makeVehicle(0xc0262b, [0xff2a2a, 0xff2a2a], 14, 22, 0);
+        makeVehicle(0xc0262b, [0xff2a2a, 0xff2a2a], -9, 38, 0);
+        makeVehicle(0xc0262b, [0xff2a2a, 0xff2a2a], -9, 12, 0);
+        makeVehicle(0xc0262b, [0xff2a2a, 0xff2a2a], 24, -19, Math.PI / 2);
         makeHeli(0xe8c020, () => [c.front + 12, 0], 28, 42, 0.4);
         new Particles(900, {
           color: 0xff7a1e, size: 2.6, opacity: 0.9, additive: true,
@@ -1013,12 +1069,13 @@ export function createDisasterEngine(canvas, { onStatsUpdate } = {}) {
     {
       ...MODES_META[3],
       sky: 0x5b6862, fog: 0x6a7670, fogNear: 40, fogFar: 240, hemiI: 0.55, sunI: 0.4, hemiGround: 0x3c4038,
-      town: [-5, 10], townR: 27, safe: [-78, -64],
+      town: [-5, 10], townR: 54, safe: [-88, -74], camR: 162,
       raw: (x, z) => hills(x, z, 4) + fbm(x * 0.06, z * 0.06, 2) * 1.5,
       build(c) {
         addTown(-5, 10, this._townLevel, {});
         c.trees = addTrees(110, (x, z) => okTree(x, z), undefined, true);
-        makeVehicle(0xf4f4f4, [0xff2a2a, 0x2a6bff], -38, -20, 0);
+        makeVehicle(0xf4f4f4, [0xff2a2a, 0x2a6bff], -62, -10, 0);
+        makeVehicle(0xc0262b, [0xff2a2a, 0xff2a2a], 52, 18, Math.PI);
         c.cx = 0;
         c.cz = 0;
         c.gy = 0;
@@ -1110,7 +1167,7 @@ export function createDisasterEngine(canvas, { onStatsUpdate } = {}) {
     {
       ...MODES_META[4],
       sky: 0x7d716b, fogNear: 70, fogFar: 300, hemiI: 0.6, sun: 0xffd2b0, sunI: 0.7, hemiGround: 0x3a302c,
-      town: [42, 40], townR: 21, safe: [92, -28], camR: 175, camTarget: [5, 0],
+      town: [44, 38], townR: 42, safe: [96, -36], camR: 175, camTarget: [10, 8],
       raw: (x, z) => {
         const d = Math.hypot(x + 50, z + 50);
         return hills(x, z, 6) + 54 / (1 + (d / 21) ** 2) - 13 * Math.exp(-((d / 5.5) ** 2));
@@ -1123,10 +1180,10 @@ export function createDisasterEngine(canvas, { onStatsUpdate } = {}) {
         c.lerp(_c2, 0.5 * smooth(90, 30, Math.hypot(x + 50, z + 50)));
       },
       build(c) {
-        addTown(42, 40, this._townLevel, { grid: 3 });
+        addTown(44, 38, this._townLevel, { compact: true });
         addTrees(120, (x, z) => okTree(x, z) && Math.hypot(x + 50, z + 50) > 42);
-        makeVehicle(0xe8b820, null, 22, 52, 0);
-        makeVehicle(0xf4f4f4, [0xff2a2a, 0x2a6bff], 62, 22, Math.PI / 2);
+        makeVehicle(0xe8b820, null, 0, 48, 0);
+        makeVehicle(0xf4f4f4, [0xff2a2a, 0x2a6bff], 88, 22, Math.PI / 2);
         makeHeli(0x3a6ea8, () => [10, 10], 55, 48, 0.25);
         c.flows = [];
         [0.35, 0.8, 1.25, 2.6, -1].forEach((a, fi) => {
@@ -1198,19 +1255,20 @@ export function createDisasterEngine(canvas, { onStatsUpdate } = {}) {
     {
       ...MODES_META[5],
       sky: 0x9fb6c4, fogNear: 90, fogFar: 330, hemiGround: 0x5a5a48,
-      town: [-32, -5], townLevel: 5, townR: 21, safe: [-85, 45], camTarget: [-10, 0], camR: 165,
-      raw: (x, z) => hills(x, z, 5) + 7 - smooth(-15, 75, x) * 24 + 16 * Math.exp(-(((x + 85) ** 2 + (z - 45) ** 2) / 900)),
+      town: [-36, 0], townLevel: 5, townR: 42, safe: [-96, 62], camTarget: [-14, 0], camR: 168,
+      raw: (x, z) => hills(x, z, 5) + 7 - smooth(-15, 75, x) * 24 + 16 * Math.exp(-(((x + 96) ** 2 + (z - 62) ** 2) / 900)),
       color(c, x, y, z, s) {
         natural(c, x, y, z, s, { sandBelow: 2.6 });
         _c2.set(0x5d6a6a);
         c.lerp(_c2, smooth(-0.5, -4, y));
       },
       build(c) {
-        addTown(-32, -5, 5, { grid: 3 });
+        addTown(-36, 0, 5, { compact: true });
         addTrees(90, (x, z) => okTree(x, z, 3.5));
         c.water = makeWater(0x2f6f8a, 0.86);
-        makeVehicle(0xf4f4f4, [0xff2a2a, 0x2a6bff], -55, -20, Math.PI / 2);
-        makeHeli(0xd23a2a, () => [-10, 0], 50, 40, 0.3);
+        makeVehicle(0xf4f4f4, [0xff2a2a, 0x2a6bff], -80, -16, Math.PI / 2);
+        makeVehicle(0xc0262b, [0xff2a2a, 0xff2a2a], -80, 16, Math.PI / 2);
+        makeHeli(0xd23a2a, () => [-14, 0], 50, 40, 0.3);
         c.boats = [];
         for (let k = 0; k < 3; k++) {
           const g = new THREE.Group();
@@ -1266,25 +1324,26 @@ export function createDisasterEngine(canvas, { onStatsUpdate } = {}) {
     {
       ...MODES_META[6],
       sky: 0xa9b4ba, fogNear: 80, fogFar: 320, hemiGround: 0x54483a,
-      town: [0, 32], townR: 27, safe: [-74, 62], camTarget: [0, 0], camR: 170,
+      town: [0, 46], townR: 54, safe: [-82, 74], camTarget: [0, 12], camR: 170,
       raw: (x, z) => {
         const m = smooth(-12, -85, z);
         let h = hills(x, z, 5) + m * 58 + (fbm(x * 0.05, z * 0.05) - 0.5) * 10 * m;
-        h -= 5 * Math.exp(-((x / 15) ** 2)) * smooth(-2, -30, z) * (1 - smooth(-70, -92, z));
+        h -= 5 * Math.exp(-((x / 18) ** 2)) * smooth(-2, -30, z) * (1 - smooth(-70, -92, z));
         return h;
       },
       color(c, x, y, z, s) {
         natural(c, x, y, z, s, {});
-        const k = smooth(22, 13, Math.abs(x)) * smooth(12, 4, z) * smooth(-95, -85, z);
+        const k = smooth(26, 15, Math.abs(x)) * smooth(12, 4, z) * smooth(-95, -85, z);
         _c2.set(0x6b4f35);
         c.lerp(_c2, k * 0.9);
       },
       build(c) {
-        addTown(0, 32, this._townLevel, { damage: (_x, z) => (z < 26 ? 0.9 : 0) });
-        c.trees = addTrees(110, (x, z) => okTree(x, z) && (Math.abs(x) > 24 || z > 14));
-        makeVehicle(0xe8b820, [0xffb000, 0xffb000], -30, 8, 0);
+        addTown(0, 46, this._townLevel, { damage: (x, z) => (z < 16 && Math.abs(x) < 34 ? 0.9 : 0.08) });
+        c.trees = addTrees(110, (x, z) => okTree(x, z) && (Math.abs(x) > 28 || z > 12));
+        makeVehicle(0xe8b820, [0xffb000, 0xffb000], -57, 20, 0);
+        makeVehicle(0xf4f4f4, [0xff2a2a, 0x2a6bff], 57, 28, Math.PI);
         c.rocks = [];
-        for (let k = 0; k < 40; k++) {
+        for (let k = 0; k < 44; k++) {
           const s = R(0.8, 3), m = new THREE.Mesh(G.rock, M(pick([0x7b7066, 0x6a5f55, 0x8a7f72])));
           m.scale.setScalar(s);
           m.castShadow = true;
@@ -1307,11 +1366,11 @@ export function createDisasterEngine(canvas, { onStatsUpdate } = {}) {
         });
       },
       respawnRock(r) {
-        r.x = R(-16, 16);
+        r.x = R(-24, 24);
         r.z = R(-90, -64);
         r.vx = 0;
         r.vz = 0;
-        r.stopZ = R(4, 22);
+        r.stopZ = R(-2, 20);
       },
       update(dt, _t, c) {
         let n = 0;
@@ -1338,53 +1397,6 @@ export function createDisasterEngine(canvas, { onStatsUpdate } = {}) {
       },
       status(c) {
         return `${c.moving || 0} boulders sliding downhill`;
-      }
-    },
-    {
-      ...MODES_META[7],
-      sky: 0xd4dce3, fog: 0xdde4ea, fogNear: 20, fogFar: 150, hemiSky: 0xeef4ff, hemiGround: 0x9aa6b4, hemiI: 0.9, sun: 0xeef4ff, sunI: 0.5,
-      town: [0, 0], townR: 27, safe: [-58, 54],
-      raw: (x, z) => hills(x, z, 16) + fbm(x * 0.07, z * 0.07, 2) * 2,
-      color(c, x, _y, z, s) {
-        const n = vnoise(x * 0.08, z * 0.08);
-        c.set(0xeef2f6);
-        _c2.set(0xc4d2df);
-        c.lerp(_c2, n * 0.5);
-        _c2.set(0x6d6f72);
-        c.lerp(_c2, smooth(0.32, 0.55, s) * 0.6);
-      },
-      build(c) {
-        addTown(0, 0, this._townLevel, { snow: true });
-        addTrees(130, (x, z) => okTree(x, z), 0x8fa89a);
-        const drifts = new THREE.InstancedMesh(G.blob, M(0xf3f6f8), 30);
-        for (let k = 0; k < 30; k++) {
-          const x = R(-40, 40), z = R(-40, 40);
-          _dummy.rotation.set(0, 0, 0);
-          _dummy.scale.set(R(2, 5), R(0.6, 1.4), R(2, 4));
-          _dummy.position.set(x, H(x, z), z);
-          _dummy.updateMatrix();
-          drifts.setMatrixAt(k, _dummy.matrix);
-        }
-        drifts.instanceMatrix.needsUpdate = true;
-        modeGroup.add(drifts);
-        const car = makeVehicle(0x3366aa, null, -8, 12, 0.3);
-        car.rotation.z = 0.12;
-        const drift = new THREE.Mesh(G.blob, M(0xf3f6f8));
-        drift.scale.set(4, 1.6, 3);
-        drift.position.set(-9, this._townLevel, 13);
-        modeGroup.add(drift);
-        c.plow = makeVehicle(0xe8a317, [0xffb000, 0xffb000], 0, 0, 0);
-        precip(5000, { color: 0xffffff, size: 0.75, opacity: 0.9, fall: 7, wind: 12, height: 70, spread: 170 });
-      },
-      update(_dt, t, c) {
-        scene.fog.far = 220 / (0.6 + INT);
-        scene.fog.near = scene.fog.far * 0.12;
-        const x = Math.sin(t * 0.12) * 32, dir = Math.cos(t * 0.12);
-        c.plow.position.set(x, H(x, 0), 0);
-        c.plow.rotation.y = dir > 0 ? 0 : Math.PI;
-      },
-      status() {
-        return `Visibility about ${Math.round(scene.fog.far * 0.6)} m`;
       }
     }
   ];
@@ -1749,22 +1761,21 @@ export function createDisasterEngine(canvas, { onStatsUpdate } = {}) {
       landslideZones: [],
     };
     const rScale = 0.75 + 0.35 * INT;
+    const cityRad = m._townHalf || m.townR || 54;
     if (m.id === 'wildfire') {
-      hazardZones3D.fireZones.push({ kind: 'fire', label: 'WILDFIRE FRONT', x: -20, z: 0, r: 28 * rScale });
+      hazardZones3D.fireZones.push({ kind: 'fire', label: 'WILDFIRE FRONT', x: -20, z: 0, r: 34 * rScale });
     } else if (m.id === 'volcano') {
-      hazardZones3D.fireZones.push({ kind: 'fire', label: 'VOLCANIC VENT', x: 0, z: -48, r: 26 * rScale });
+      hazardZones3D.fireZones.push({ kind: 'fire', label: 'VOLCANIC VENT', x: -50, z: -50, r: 30 * rScale });
     } else if (m.id === 'flood') {
-      hazardZones3D.floodZones.push({ kind: 'flood', label: 'FLOOD BASIN', x: m.town[0], z: m.town[1], r: 30 * rScale });
+      hazardZones3D.floodZones.push({ kind: 'flood', label: 'FLOOD BASIN', x: m.town[0], z: m.town[1], r: cityRad * 0.85 * rScale });
     } else if (m.id === 'tsunami') {
-      hazardZones3D.floodZones.push({ kind: 'tsunami', label: 'TSUNAMI SURGE', x: 0, z: 32, r: 34 * rScale });
+      hazardZones3D.floodZones.push({ kind: 'tsunami', label: 'TSUNAMI SURGE', x: 10, z: 0, r: 42 * rScale });
     } else if (m.id === 'tornado') {
-      hazardZones3D.debrisZones.push({ kind: 'tornado', label: 'TORNADO VORTEX', x: m.town[0], z: m.town[1], r: 24 * rScale });
+      hazardZones3D.debrisZones.push({ kind: 'tornado', label: 'TORNADO VORTEX', x: m.town[0], z: m.town[1], r: cityRad * 0.75 * rScale });
     } else if (m.id === 'earthquake') {
-      hazardZones3D.debrisZones.push({ kind: 'debris', label: 'SEISMIC RUBBLE', x: m.town[0], z: m.town[1], r: 25 * rScale });
+      hazardZones3D.debrisZones.push({ kind: 'debris', label: 'SEISMIC RUBBLE', x: m.town[0], z: m.town[1], r: cityRad * 0.85 * rScale });
     } else if (m.id === 'landslide') {
-      hazardZones3D.landslideZones.push({ kind: 'landslide', label: 'SLIDE CHANNEL', x: 0, z: -25, r: 24 * rScale });
-    } else if (m.id === 'blizzard') {
-      hazardZones3D.debrisZones.push({ kind: 'blizzard', label: 'WHITEOUT CORE', x: m.town[0], z: m.town[1], r: 28 * rScale });
+      hazardZones3D.landslideZones.push({ kind: 'landslide', label: 'SLIDE CHANNEL', x: 0, z: -15, r: 32 * rScale });
     }
 
     sharedSim.sync3DWorldToStore({
@@ -1774,6 +1785,7 @@ export function createDisasterEngine(canvas, { onStatsUpdate } = {}) {
       intensity: INT,
       safeZone3D: { x: m.safe[0], z: m.safe[1] },
       townCenter3D: { x: m.town[0], z: m.town[1] },
+      cityBounds3D: m.cityBounds,
       buildings3D,
       survivors3D,
       hazardZones3D,
@@ -2020,10 +2032,6 @@ export function createDisasterEngine(canvas, { onStatsUpdate } = {}) {
     setIntensity(val) {
       INT = val;
       if (curMode) {
-        if (curMode.id === 'blizzard') {
-          scene.fog.far = 220 / (0.6 + INT);
-          scene.fog.near = scene.fog.far * 0.12;
-        }
         syncWorldToSharedStore(curModeIndex);
         emitStats();
       }
