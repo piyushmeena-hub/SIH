@@ -2,6 +2,9 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { createDisasterEngine, MODES_META } from './simulation/disasterEngine.js';
 import sharedSim from './integration/simulationStore.js';
 import { SIM_EVENTS } from './integration/simulationEvents.js';
+import backendBridge from './integration/backendBridge.js';
+import { FLEET_CONFIG } from './simulation/fleetManager.js';
+import { VerificationSuite } from './simulation/verificationSuite.js';
 
 function fmtClock(sec) {
   const s = Math.max(0, Math.floor(sec || 0));
@@ -39,7 +42,6 @@ export default function App() {
   const [modeIndex, setModeIndex] = useState(0);
   const [viewMode, setViewMode] = useState('3d');
   const [intensity, setIntensity] = useState(1);
-  const [showPeople, setShowPeople] = useState(true);
   const [autoRotate, setAutoRotate] = useState(() => !window.matchMedia('(prefers-reduced-motion: reduce)').matches);
   const [paused, setPaused] = useState(false);
   const [timeScale, setTimeScale] = useState(5);
@@ -48,6 +50,26 @@ export default function App() {
     status: 'M7.0 event complete - Partial collapse: Upper-story shearing & tilt',
     waiting: 0,
   });
+
+  // UAV-X Swarm Autonomy 3D Visual Layer Toggles
+  const [apfVisible, setApfVisible] = useState(true);
+  const [fanetVisible, setFanetVisible] = useState(true);
+  const [octomapVisible, setOctomapVisible] = useState(true);
+  const [aiVisible, setAiVisible] = useState(true);
+  const [thermalView, setThermalView] = useState(false);
+  const [gasView, setGasView] = useState(false);
+  const [noNetworkZoneActive, setNoNetworkZoneActive] = useState(false);
+  const [noNetworkRadius, setNoNetworkRadius] = useState(35);
+  const [debugOverlayVisible, setDebugOverlayVisible] = useState(false);
+  const [testResults, setTestResults] = useState(null);
+  const [testRunning, setTestRunning] = useState(false);
+  const [activeSubsystemTab, setActiveSubsystemTab] = useState('fleet'); // 'fleet', 'fanet', 'ai', 'octomap'
+
+  // Initialize Backend WebSocket Bridge on port 8080
+  useEffect(() => {
+    backendBridge.init(8080);
+    return () => backendBridge.dispose();
+  }, []);
 
   // Single-burst Earthquake Event State (Initial state: post-M7.0 aftermath)
   const [earthquakeState, setEarthquakeState] = useState({
@@ -97,14 +119,21 @@ export default function App() {
     engineRef.current?.setEarthquakeMagnitude(val);
   }, []);
 
-  // Throttled snapshot of SharedSimulationState for React HUD (5 Hz max)
+  // Snapshot of SharedSimulationState for React HUD (synchronized from backend at 30 Hz)
   const [simSnapshot, setSimSnapshot] = useState(() => ({
     elapsedTime: 0,
+    coveragePercent: 0,
+    totalSurvivors: 0,
+    detectedSurvivors: 0,
     drones: [],
     pois: [],
     survivors: [],
     network: sharedSim.state.network,
     hazards: sharedSim.state.hazards,
+    backend: sharedSim.state.backend,
+    octomap: sharedSim.state.octomap,
+    aiVision: sharedSim.state.aiVision,
+    taggedHazards: sharedSim.state.hazards.taggedHazards || [],
     selectedDroneId: null,
     selectedPoiId: null,
   }));
@@ -115,6 +144,9 @@ export default function App() {
     setTimeScale(st.mission.timeScale);
     setSimSnapshot({
       elapsedTime: st.mission.elapsedTime,
+      coveragePercent: st.mission.coveragePercent || 0,
+      totalSurvivors: st.mission.totalSurvivors || 0,
+      detectedSurvivors: st.mission.detectedSurvivors || 0,
       drones: st.drones.slice(),
       pois: st.pois.slice(),
       survivors: st.survivors.slice(),
@@ -123,16 +155,70 @@ export default function App() {
         jammerCount: st.hazards.jammerZones.filter(j => j.on).length,
         gpsZoneCount: st.hazards.gpsDeniedZones.filter(z => z.on).length,
       },
+      backend: { ...st.backend },
+      octomap: { ...st.octomap },
+      aiVision: { ...st.aiVision },
+      taggedHazards: (st.hazards.taggedHazards || []).slice(),
       selectedDroneId: st.selection.selectedDroneId,
       selectedPoiId: st.selection.selectedPoiId,
     });
+  }, []);
+
+  // 3D Visual Layer Toggles
+  const handleToggleApf = useCallback(() => {
+    setApfVisible(prev => {
+      const next = !prev;
+      engineRef.current?.setApfBubblesVisible(next);
+      return next;
+    });
+  }, []);
+
+  const handleToggleFanet = useCallback(() => {
+    setFanetVisible(prev => {
+      const next = !prev;
+      engineRef.current?.setFanetLinksVisible(next);
+      return next;
+    });
+  }, []);
+
+  const handleToggleOctomap = useCallback(() => {
+    setOctomapVisible(prev => {
+      const next = !prev;
+      engineRef.current?.setOctomapVisible(next);
+      return next;
+    });
+  }, []);
+
+  const handleToggleAi = useCallback(() => {
+    setAiVisible(prev => {
+      const next = !prev;
+      engineRef.current?.setAiDetectionsVisible(next);
+      return next;
+    });
+  }, []);
+
+  // Swarm Command Handlers
+  const handleSwarmTakeoff = useCallback(() => {
+    backendBridge.sendCommand('TAKEOFF_ALL');
+  }, []);
+
+  const handleSwarmSurvey = useCallback(() => {
+    backendBridge.sendCommand('SURVEY_ALL');
+  }, []);
+
+  const handleSwarmRtl = useCallback(() => {
+    backendBridge.sendCommand('RTL_ALL');
+  }, []);
+
+  const handleReconnectBackend = useCallback(() => {
+    backendBridge.connect();
   }, []);
 
   useEffect(() => {
     let lastSyncMs = 0;
     const onStateSynced = () => {
       const now = performance.now();
-      if (now - lastSyncMs < 180) return;
+      if (now - lastSyncMs < 60) return; // ~16 Hz React UI updates
       lastSyncMs = now;
       syncSnapshotNow();
     };
@@ -229,14 +315,6 @@ export default function App() {
     engineRef.current?.setIntensity(val);
   };
 
-  const handleTogglePeople = () => {
-    setShowPeople(prev => {
-      const next = !prev;
-      engineRef.current?.setShowPeople(next);
-      return next;
-    });
-  };
-
   const handleToggleRotate = () => {
     setAutoRotate(prev => {
       const next = !prev;
@@ -251,6 +329,126 @@ export default function App() {
     engineRef.current?.setPaused(next);
     sharedSim.setPaused(next, '3d');
   };
+
+  const handleToggleThermal = () => {
+    setThermalView(prev => {
+      const next = !prev;
+      engineRef.current?.setThermalView(next);
+      return next;
+    });
+  };
+
+  const handleToggleGas = () => {
+    setGasView(prev => {
+      const next = !prev;
+      engineRef.current?.setGasView(next);
+      return next;
+    });
+  };
+
+  const handleToggleNoNetworkZone = () => {
+    setNoNetworkZoneActive(prev => {
+      const next = !prev;
+      sharedSim.toggleNoNetworkZone(next, 20, 10, noNetworkRadius, 'ui');
+      return next;
+    });
+  };
+
+  const handleNoNetworkRadiusChange = (e) => {
+    const r = parseFloat(e.target.value);
+    setNoNetworkRadius(r);
+    if (noNetworkZoneActive) {
+      sharedSim.toggleNoNetworkZone(true, 20, 10, r, 'ui');
+    }
+  };
+
+  const handleResetSimulation = () => {
+    engineRef.current?.resetSimulation();
+  };
+
+  const handleReviveDrone = (droneId = 4) => {
+    sharedSim.reviveDrone(droneId, 'ui');
+  };
+
+  const handleRunVerification = useCallback(async () => {
+    if (!engineRef.current || testRunning) return;
+    setTestRunning(true);
+    const suite = new VerificationSuite(engineRef.current, sharedSim);
+    const report = await suite.runFullSuite();
+    setTestResults(report);
+    setTestRunning(false);
+    setDebugOverlayVisible(true);
+  }, [testRunning]);
+
+  // Global keybindings for Debug Overlay (D or ~)
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'd' || e.key === 'D' || e.key === '`' || e.key === '~') {
+        setDebugOverlayVisible(prev => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  // Section I: headless/automated run. Open with ?autotest=1 to run the full
+  // real-engine suite on load; results are written to #autotestResult.
+  const [autotestJson, setAutotestJson] = useState(null);
+  useEffect(() => {
+    if (isLoading || !engineRef.current) return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('autotest') !== '1') return;
+    let cancelled = false;
+    (async () => {
+      const suite = new VerificationSuite(engineRef.current, sharedSim);
+      const report = await suite.runFullSuite();
+      if (cancelled) return;
+      setTestResults(report);
+      setDebugOverlayVisible(true);
+      setAutotestJson(JSON.stringify(report));
+      document.title = 'AUTOTEST_DONE';
+    })();
+    return () => { cancelled = true; };
+  }, [isLoading]);
+  const [screenshotData, setScreenshotData] = useState(null);
+  useEffect(() => {
+    if (isLoading || !engineRef.current) return;
+    const params = new URLSearchParams(window.location.search);
+    const tabParam = params.get('tab');
+    if (tabParam !== null) {
+      const tabIdx = parseInt(tabParam, 10);
+      if (!isNaN(tabIdx) && tabIdx >= 0 && tabIdx < MODES_META.length) {
+        selectMode(tabIdx);
+      }
+    }
+    const phaseParam = params.get('phase');
+    if (phaseParam) {
+      const fleet = engineRef.current?.getFleetManager ? engineRef.current.getFleetManager() : sharedSim.fleetManager;
+      if (fleet) {
+        if (phaseParam === 'start') {
+          for (let s = 0; s < 20; s++) fleet.step(0.1);
+        } else if (phaseParam === 'mid') {
+          for (let s = 0; s < 150; s++) fleet.step(0.1);
+        } else if (phaseParam === 'coverage') {
+          for (let s = 0; s < 450; s++) fleet.step(0.2);
+        } else if (phaseParam === 'nonetwork') {
+          const b = fleet.cityBounds;
+          let zx = (b.minX + b.maxX) / 2;
+          let zz = (b.minZ + b.maxZ) / 2;
+          if (Math.hypot(zx - fleet.gcsPosition.x, zz - fleet.gcsPosition.z) < 25) {
+            zx = 0;
+            zz = 0;
+          }
+          fleet.setNoNetworkZone(true, zx, zz, (b.maxX - b.minX) * 0.22);
+          for (let s = 0; s < 250; s++) fleet.step(0.1);
+        }
+      }
+      setTimeout(() => {
+        const data = engineRef.current?.captureScreenshot?.();
+        if (data) setScreenshotData(data);
+      }, 600);
+    }
+  }, [isLoading, selectMode]);
 
   const handleSpeedChange = scale => {
     setTimeScale(scale);
@@ -387,31 +585,256 @@ export default function App() {
                 Relay UAV
               </li>
             </ul>
-            <p className="count">
-              Unconscious survivors on the map: <b id="waiting">{hudStats.waiting}</b>
-              {' · '}Detected by Swarm: <b id="detectedCount">{detectedSurvivorsCount}/{simSnapshot.survivors.length || hudStats.waiting}</b>
-            </p>
-
-            {/* Live Coordinated Swarm C2 Telemetry inside 3D HUD */}
-            <div className="swarm-sync-box" id="swarmSyncBox">
-              <div className="swarm-sync-head">
-                <span className="sync-title">SWARM C2 TELEMETRY (LIVE 2D↔3D)</span>
-                <span className={`sync-pill ${simSnapshot.network.connected ? 'ok' : simSnapshot.network.fleetConnected ? 'warn' : 'lost'}`}>
-                  {simSnapshot.network.connected
-                    ? `LINKED · ${simSnapshot.network.links?.length || 0} HOPS`
-                    : simSnapshot.network.fleetConnected
-                      ? 'EN ROUTE'
-                      : 'RECONNECTING'}
+            <div className="hud-metrics-grid">
+              <div className="hud-metric-card">
+                <span className="hud-metric-label">Fleet Integrity (N={FLEET_CONFIG.DRONE_COUNT})</span>
+                <span className={`hud-metric-val ${simSnapshot.drones.filter(d => !d.killed).length === FLEET_CONFIG.DRONE_COUNT ? 'ok' : 'warn'}`}>
+                  {simSnapshot.drones.filter(d => !d.killed).length} / {FLEET_CONFIG.DRONE_COUNT} Active
+                  {simSnapshot.drones.length !== FLEET_CONFIG.DRONE_COUNT && (
+                    <span className="fleet-warn-badge">⚠️ N-MISMATCH</span>
+                  )}
+                  {simSnapshot.drones.some(d => d.killed) && (
+                    <span className="fleet-warn-badge">DR-DOWN</span>
+                  )}
                 </span>
               </div>
-              <div className="swarm-kpi-grid">
-                <div><span>UAVs Alive</span><b>{simSnapshot.network.aliveCount}/{simSnapshot.drones.length}</b></div>
-                <div><span>Relays / Mission</span><b>{simSnapshot.network.relayCount} / {simSnapshot.network.missionCount}</b></div>
-                <div><span>PoIs Surveyed</span><b>{surveyedPoisCount}/{simSnapshot.pois.length}</b></div>
-                <div><span>Packets</span><b>{(simSnapshot.network.deliveredPackets || 0).toLocaleString()}</b></div>
+              <div className="hud-metric-card">
+                <span className="hud-metric-label">Area Coverage</span>
+                <span className="hud-metric-val ok">
+                  {Math.round(simSnapshot.coveragePercent || 0)}%
+                  <span style={{ fontSize: '10px', color: '#94a3b8', marginLeft: '4px' }}>
+                    ({simSnapshot.detectedSurvivors || detectedSurvivorsCount}/{simSnapshot.totalSurvivors || simSnapshot.survivors.length || hudStats.waiting} Found)
+                  </span>
+                </span>
+              </div>
+              <div className="hud-metric-card">
+                <span className="hud-metric-label">Mesh to Control Centre</span>
+                <span className={`hud-metric-val ${simSnapshot.network?.allDronesLinked ? 'ok' : 'danger'}`}>
+                  {simSnapshot.network?.allDronesLinked ? 'YES (100% Linked)' : 'NO (Unlinked UAVs)'}
+                </span>
+              </div>
+              <div className="hud-metric-card">
+                <span className="hud-metric-label">Mesh Topology</span>
+                <span className="hud-metric-val">
+                  CC: {simSnapshot.network?.connectedComponents ?? 1} · Max Hops: {simSnapshot.network?.maxHops ?? 0} · Relays: {simSnapshot.network?.relayCount ?? 0}
+                </span>
+              </div>
+            </div>
+
+            {/* UAV-X Autonomous Swarm & FANET Cockpit inside 3D HUD */}
+            <div className="swarm-subsystems-panel" id="swarmCockpit">
+              <div className="swarm-sync-head">
+                <span className="sync-title">UAV-X SWARM AUTONOMY & FANET COCKPIT</span>
+                <span className={`sync-pill ${simSnapshot.backend?.connected ? 'ok' : simSnapshot.network.connected ? 'warn' : 'lost'}`}>
+                  {simSnapshot.backend?.connected
+                    ? `LIVE ${simSnapshot.backend.hz || 30} Hz · ${simSnapshot.network.links?.length || 0} LINKS`
+                    : simSnapshot.network.connected
+                      ? `LINKED · ${simSnapshot.network.links?.length || 0} HOPS`
+                      : 'OFFLINE'}
+                </span>
               </div>
 
-              <div className="swarm-mini-label">Click Drone or Survivor/PoI (or click in 3D scene):</div>
+              {/* Subsystem Navigation Tabs */}
+              <div className="swarm-tabs-bar" role="tablist">
+                <button
+                  type="button"
+                  className={`tab-btn ${activeSubsystemTab === 'fleet' ? 'active' : ''}`}
+                  onClick={() => setActiveSubsystemTab('fleet')}
+                >
+                  🛸 Fleet Kinematics
+                </button>
+                <button
+                  type="button"
+                  className={`tab-btn ${activeSubsystemTab === 'fanet' ? 'active' : ''}`}
+                  onClick={() => setActiveSubsystemTab('fanet')}
+                >
+                  📡 FANET Mesh
+                </button>
+                <button
+                  type="button"
+                  className={`tab-btn ${activeSubsystemTab === 'ai' ? 'active' : ''}`}
+                  onClick={() => setActiveSubsystemTab('ai')}
+                >
+                  🧠 AI & FLIR
+                </button>
+                <button
+                  type="button"
+                  className={`tab-btn ${activeSubsystemTab === 'octomap' ? 'active' : ''}`}
+                  onClick={() => setActiveSubsystemTab('octomap')}
+                >
+                  🗺️ OctoMap 3D
+                </button>
+              </div>
+
+              {/* Tab 1: Fleet Kinematics */}
+              {activeSubsystemTab === 'fleet' && (
+                <div className="tab-content">
+                  <div className="fleet-table-wrap">
+                    <table className="fleet-table">
+                      <thead>
+                        <tr>
+                          <th>UAV</th>
+                          <th>FSM State</th>
+                          <th>Flight Tier</th>
+                          <th>Alt</th>
+                          <th>Vel</th>
+                          <th>Battery</th>
+                          <th>Route</th>
+                          <th>EKF σ</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {simSnapshot.drones.map(d => {
+                          const isLowBat = (d.battery || 100) <= 20;
+                          return (
+                            <tr
+                              key={d.id}
+                              style={{ cursor: 'pointer', background: simSnapshot.selectedDroneId === d.id ? 'rgba(56,189,248,0.18)' : undefined }}
+                              onClick={() => handleSelectDrone(d.id)}
+                            >
+                              <td><b>UAV_{d.id}</b></td>
+                              <td><span className={`fsm-tag fsm-${d.fsm || 'SURV'}`}>{d.fsm || 'SURV'}</span></td>
+                              <td><span className={`tier-tag-pill tier-${d.tier || 'TIER_2'}`}>{d.tier || 'TIER_2'}</span></td>
+                              <td>{Math.round(d.position?.y || 15)}m</td>
+                              <td>{d.velocity?.speed || 0}m/s</td>
+                              <td>
+                                <div className="bat-bar-wrap">
+                                  <div className="bat-track">
+                                    <div
+                                      className="bat-fill"
+                                      style={{
+                                        width: `${d.battery || 100}%`,
+                                        background: isLowBat ? '#ef4444' : d.battery < 50 ? '#f59e0b' : '#22c55e',
+                                      }}
+                                    />
+                                  </div>
+                                  <span style={{ color: isLowBat ? '#f87171' : undefined }}>{Math.round(d.battery || 100)}%</span>
+                                </div>
+                              </td>
+                              <td style={{ color: '#38bdf8' }}>{d.route || `${d.id}->0`}</td>
+                              <td>±{(d.uncertainty || 0.05).toFixed(2)}m</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div className="btns c2-actions" style={{ marginTop: '6px' }}>
+                    <button type="button" className="chip action-chip" onClick={handleSwarmTakeoff}>
+                      🚀 Swarm Takeoff
+                    </button>
+                    <button type="button" className="chip action-chip" onClick={handleSwarmSurvey}>
+                      🗺️ Auto Survey (CBBA)
+                    </button>
+                    <button type="button" className="chip action-chip" onClick={handleSwarmRtl}>
+                      🏠 Swarm RTL
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Tab 2: Resilient FANET Mesh & Dijkstra Routing */}
+              {activeSubsystemTab === 'fanet' && (
+                <div className="tab-content">
+                  <div className="swarm-kpi-grid">
+                    <div><span>PDR (Delivery)</span><b>{simSnapshot.network.pdr || 100}%</b></div>
+                    <div><span>Hop Latency</span><b>{simSnapshot.network.latency || 12} ms</b></div>
+                    <div><span>Active Links</span><b>{simSnapshot.network.links?.length || 0} Channels</b></div>
+                    <div><span>DTN Ring Buffer</span><b>{simSnapshot.network.bufferedPackets || 0} Pkts</b></div>
+                  </div>
+                  <div style={{ fontSize: '11px', color: '#94a3b8', margin: '4px 0 2px' }}>
+                    Dual-Band Radio: <b style={{ color: '#00f0ff' }}>2.4 GHz Video</b> + <b style={{ color: '#f59e0b' }}>915 MHz LoRa Fallback</b>
+                  </div>
+                  <div className="fleet-table-wrap">
+                    <table className="fleet-table">
+                      <thead>
+                        <tr>
+                          <th>Link</th>
+                          <th>Band</th>
+                          <th>SNR</th>
+                          <th>Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(simSnapshot.network.links || []).map((lk, idx) => (
+                          <tr key={idx}>
+                            <td>{lk.fromId === 0 ? 'GCS' : `UAV_${lk.fromId}`} ↔ {lk.toId === 0 ? 'GCS' : `UAV_${lk.toId}`}</td>
+                            <td style={{ color: lk.band === 'LORA' ? '#f59e0b' : '#00f0ff' }}>{lk.band || '2.4G'}</td>
+                            <td>{lk.snr || 20} dB</td>
+                            <td><span style={{ color: lk.state === 'ok' ? '#4ade80' : '#f59e0b' }}>{lk.state?.toUpperCase()}</span></td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* Tab 3: AI Perception & FLIR Thermal Fusion */}
+              {activeSubsystemTab === 'ai' && (
+                <div className="tab-content" style={{ display: 'grid', gap: '6px' }}>
+                  <div style={{ fontSize: '11px', color: '#94a3b8' }}>
+                    YOLOv8 Survivors & FLIR Thermal Fusion (31°C–38.5°C):
+                  </div>
+                  {(simSnapshot.survivors || []).filter(s => s.detected).length === 0 ? (
+                    <div style={{ fontSize: '11.5px', color: 'var(--muted)', fontStyle: 'italic', padding: '4px' }}>
+                      Surveying rubble field... AI model searching for heat signatures.
+                    </div>
+                  ) : (
+                    (simSnapshot.survivors || []).filter(s => s.detected).slice(0, 4).map((s, idx) => (
+                      <div key={idx} className="flir-survivor-item">
+                        <div>
+                          <strong>{s.id}</strong> · Conf: {Math.round((s.confidence || 0.9) * 100)}%
+                        </div>
+                        <span className="flir-badge-pill">
+                          {s.lifeVerified ? `❤ VITAL ${s.temperature || 36.8}°C` : 'SURVEYING'}
+                        </span>
+                      </div>
+                    ))
+                  )}
+
+                  {simSnapshot.taggedHazards && simSnapshot.taggedHazards.length > 0 && (
+                    <>
+                      <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '4px' }}>
+                        OpenCV Tagged Hazards:
+                      </div>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                        {simSnapshot.taggedHazards.map((h, i) => (
+                          <span key={i} className={`hazard-badge-pill hazard-${h.type}`}>
+                            {h.type === 'FIRE' ? '🔥 ' : h.type === 'GAS' ? '☣ ' : '🚧 '}
+                            {h.id}: {h.type} ({Math.round((h.confidence || 0.85) * 100)}%)
+                          </span>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+
+              {/* Tab 4: OctoMap 3D Log-Odds Mapping & Spatial Entropy */}
+              {activeSubsystemTab === 'octomap' && (
+                <div className="tab-content">
+                  <div className="entropy-box">
+                    <div className="entropy-head">
+                      <span>Shannon Spatial Entropy Reduction</span>
+                      <b style={{ color: '#22c55e' }}>{simSnapshot.octomap?.entropyReduction || 0}%</b>
+                    </div>
+                    <div className="entropy-track" role="progressbar">
+                      <div className="entropy-fill" style={{ width: `${Math.min(100, simSnapshot.octomap?.entropyReduction || 0)}%` }} />
+                    </div>
+                    <div className="swarm-kpi-grid" style={{ marginTop: '4px' }}>
+                      <div><span>Mapped Volume</span><b>{simSnapshot.octomap?.mappedVolume || 0} m³</b></div>
+                      <div><span>Occupied Voxels</span><b>{simSnapshot.octomap?.occupiedCount || 0}</b></div>
+                      <div><span>Mean Entropy</span><b>{simSnapshot.octomap?.meanEntropy || 1.0} b/vox</b></div>
+                      <div><span>LiDAR Beams</span><b>360° × 30°</b></div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Drone & PoI quick select pills */}
+              <div className="swarm-mini-label" style={{ marginTop: '4px' }}>Select Drone / Target:</div>
               <div className="swarm-pill-list" id="dronePillList">
                 {simSnapshot.drones.map(d => (
                   <button
@@ -419,22 +842,9 @@ export default function App() {
                     type="button"
                     className={`mini-pill role-${d.role}${simSnapshot.selectedDroneId === d.id ? ' selected' : ''}`}
                     onClick={() => handleSelectDrone(d.id)}
-                    title={`${d.id} (${d.role}) · ${Math.round(d.battery)}%`}
+                    title={`${d.id} (${d.fsm || d.role}) · ${Math.round(d.battery)}%`}
                   >
-                    {d.id}
-                  </button>
-                ))}
-              </div>
-              <div className="swarm-pill-list" id="poiPillList">
-                {simSnapshot.pois.map(p => (
-                  <button
-                    key={p.id}
-                    type="button"
-                    className={`mini-pill poi-${p.status}${simSnapshot.selectedPoiId === p.id ? ' selected' : ''}`}
-                    onClick={() => handleSelectPoi(p.id)}
-                    title={`${p.id}: ${p.status} (${Math.round(p.progress)}%)`}
-                  >
-                    {p.id}
+                    UAV_{d.id}
                   </button>
                 ))}
               </div>
@@ -463,12 +873,64 @@ export default function App() {
               >
                 2D Tactical
               </button>
+              <button
+                type="button"
+                className={`backend-status-pill ${simSnapshot.backend?.connected ? 'online' : 'offline'}`}
+                onClick={handleReconnectBackend}
+                title={simSnapshot.backend?.connected ? `Backend Live: ${simSnapshot.backend?.hz || 30} Hz Telemetry | ws://localhost:8080` : 'Backend Disconnected: Click to retry ws://localhost:8080'}
+              >
+                <span className="live-pulse-dot" aria-hidden="true" />
+                {simSnapshot.backend?.connected ? `LIVE ${simSnapshot.backend.hz || 30}Hz` : 'RECONNECT'}
+              </button>
+              <span className="sitl-badge" title="MAVLink v2.0 UDP SITL Bridge bound to port 14550">
+                SITL :14550
+              </span>
               <span className="clock-badge" id="sharedSimClock" title="Shared Mission Clock">
                 {fmtClock(simSnapshot.elapsedTime)}
               </span>
             </div>
             {is3D && (
               <>
+                {/* 3D Visual Layers Bar */}
+                <div className="layer-toggle-bar" role="group" aria-label="3D Visual Layers">
+                  <button
+                    type="button"
+                    className="chip layer-btn"
+                    aria-pressed={apfVisible}
+                    onClick={handleToggleApf}
+                    title="Toggle Khatib APF Safety Clearance & Downwash Frustum Cones"
+                  >
+                    {apfVisible ? '✓ APF Safety' : '+ APF Safety'}
+                  </button>
+                  <button
+                    type="button"
+                    className="chip layer-btn"
+                    aria-pressed={fanetVisible}
+                    onClick={handleToggleFanet}
+                    title="Toggle Dual-Band FANET Links & Dynamic Telemetry Packets"
+                  >
+                    {fanetVisible ? '✓ FANET Mesh' : '+ FANET Mesh'}
+                  </button>
+                  <button
+                    type="button"
+                    className="chip layer-btn"
+                    aria-pressed={octomapVisible}
+                    onClick={handleToggleOctomap}
+                    title="Toggle OctoMap 3D Rubble Voxels Mapping"
+                  >
+                    {octomapVisible ? '✓ OctoMap 3D' : '+ OctoMap 3D'}
+                  </button>
+                  <button
+                    type="button"
+                    className="chip layer-btn"
+                    aria-pressed={aiVisible}
+                    onClick={handleToggleAi}
+                    title="Toggle AI FLIR Thermal Life Signs & OpenCV Hazards"
+                  >
+                    {aiVisible ? '✓ AI Vision' : '+ AI Vision'}
+                  </button>
+                </div>
+
                 <div className="speed-bar" role="group" aria-label="Simulation speed">
                   <span className="speed-lbl">Speed</span>
                   {[1, 5, 30, 120].map(sp => (
@@ -567,11 +1029,11 @@ export default function App() {
                   <button
                     className="chip"
                     type="button"
-                    id="bPeople"
-                    aria-pressed={showPeople}
-                    onClick={handleTogglePeople}
+                    id="bResetSim"
+                    title="Unified lifecycle reset: Re-create N drones and restart mission"
+                    onClick={handleResetSimulation}
                   >
-                    People
+                    ↺ Reset Sim
                   </button>
                   <button
                     className="chip"
@@ -610,22 +1072,59 @@ export default function App() {
                     + Critical PoI
                   </button>
                   <button
-                    className="chip action-chip"
+                    className={`chip action-chip ${noNetworkZoneActive ? 'active' : ''}`}
                     type="button"
-                    id="btnAddJammer3D"
-                    onClick={() => sharedSim.addJammer({}, '3d')}
+                    id="btnToggleNoNetwork"
+                    onClick={handleToggleNoNetworkZone}
                   >
-                    + RF Jammer ({simSnapshot.hazards.jammerCount || 0})
+                    ⚡ No-Network Zone ({noNetworkZoneActive ? 'ON' : 'OFF'})
                   </button>
                   <button
-                    className="chip action-chip"
+                    className={`chip action-chip ${thermalView ? 'active' : ''}`}
                     type="button"
-                    id="btnAddGps3D"
-                    onClick={() => sharedSim.addGpsZone({}, '3d')}
+                    id="btnToggleThermal"
+                    onClick={handleToggleThermal}
                   >
-                    + GPS Denied ({simSnapshot.hazards.gpsZoneCount || 0})
+                    👁 Thermal
+                  </button>
+                  <button
+                    className={`chip action-chip ${gasView ? 'active' : ''}`}
+                    type="button"
+                    id="btnToggleGas"
+                    onClick={handleToggleGas}
+                  >
+                    💨 Gas Plume
+                  </button>
+                  <button
+                    className="chip danger-chip"
+                    type="button"
+                    id="btnKillDR4"
+                    onClick={() => simSnapshot.drones.find(d => d.id === 4)?.killed ? handleReviveDrone(4) : sharedSim.killDrone(4, 'ui')}
+                  >
+                    {simSnapshot.drones.find(d => d.id === 4)?.killed ? 'Revive DR4' : 'Kill DR4'}
+                  </button>
+                  <button
+                    className={`chip action-chip ${debugOverlayVisible ? 'active' : ''}`}
+                    type="button"
+                    id="btnDebugOverlay"
+                    onClick={() => setDebugOverlayVisible(prev => !prev)}
+                  >
+                    🛠 Debug [D]
                   </button>
                 </div>
+                {noNetworkZoneActive && (
+                  <label className="range" style={{ marginTop: '6px' }}>
+                    <span>No-Network Zone Radius ({noNetworkRadius}m)</span>
+                    <input
+                      type="range"
+                      min="15"
+                      max="60"
+                      step="5"
+                      value={noNetworkRadius}
+                      onChange={handleNoNetworkRadiusChange}
+                    />
+                  </label>
+                )}
               </>
             )}
           </section>
@@ -668,10 +1167,9 @@ export default function App() {
                       type="button"
                       className="chip danger-chip"
                       id="btnKillDrone3D"
-                      disabled={selectedDrone.mode === 'dead'}
-                      onClick={handleKillSelectedDrone}
+                      onClick={() => (selectedDrone.killed || selectedDrone.mode === 'dead') ? handleReviveDrone(selectedDrone.id) : handleKillSelectedDrone()}
                     >
-                      {selectedDrone.mode === 'dead' ? `${selectedDrone.id} Down` : `Kill ${selectedDrone.id}`}
+                      {(selectedDrone.killed || selectedDrone.mode === 'dead') ? `Revive ${selectedDrone.id}` : `Kill ${selectedDrone.id}`}
                     </button>
                   </div>
                 </div>
@@ -723,8 +1221,107 @@ export default function App() {
       </nav>
 
       <p className="hint" hidden={!is3D}>
-        Drag to orbit · Scroll to zoom · Click any Drone or Survivor/PoI in 3D · Press 1–7 to switch disasters
+        Drag to orbit · Scroll to zoom · Click any Drone or Survivor/PoI in 3D · Press 1–7 to switch disasters · Press [D] for Diagnostics
       </p>
+
+      {/* SECTION I: Debug Overlay Modal & Automated Check Suite */}
+      {debugOverlayVisible && (
+        <aside className="debug-overlay" id="debugOverlay" role="dialog" aria-label="Simulation Diagnostics">
+          <div className="debug-overlay-header">
+            <span className="debug-overlay-title">🛠 UAV-X DIAGNOSTICS & VERIFICATION</span>
+            <button
+              type="button"
+              className="debug-close-btn"
+              onClick={() => setDebugOverlayVisible(false)}
+            >
+              ✕
+            </button>
+          </div>
+
+          <div className="debug-grid">
+            <div className="debug-item">
+              <div className="debug-item-title">Fleet Integrity (A4)</div>
+              <div className="debug-item-val" style={{ color: simSnapshot.drones.length === FLEET_CONFIG.DRONE_COUNT ? '#4ade80' : '#f87171' }}>
+                {simSnapshot.drones.length} / {FLEET_CONFIG.DRONE_COUNT} ({simSnapshot.drones.filter(d => !d.killed).length} Alive)
+              </div>
+            </div>
+            <div className="debug-item">
+              <div className="debug-item-title">Mesh Connectivity (A3)</div>
+              <div className="debug-item-val" style={{ color: simSnapshot.network?.allDronesLinked ? '#4ade80' : '#f87171' }}>
+                {simSnapshot.network?.allDronesLinked ? '100% CC REACHABLE' : 'GRAPH PARTITIONED'}
+              </div>
+            </div>
+            <div className="debug-item">
+              <div className="debug-item-title">Mesh Components / Hops</div>
+              <div className="debug-item-val">
+                CC: {simSnapshot.network?.connectedComponents ?? 1} · Max Hops: {simSnapshot.network?.maxHops ?? 0}
+              </div>
+            </div>
+            <div className="debug-item">
+              <div className="debug-item-title">Active Relays</div>
+              <div className="debug-item-val">
+                {simSnapshot.network?.relayCount ?? 0} Relays Active
+              </div>
+            </div>
+            <div className="debug-item">
+              <div className="debug-item-title">Area Coverage (A5)</div>
+              <div className="debug-item-val" style={{ color: '#38bdf8' }}>
+                {Math.round(simSnapshot.coveragePercent || 0)}%
+              </div>
+            </div>
+            <div className="debug-item">
+              <div className="debug-item-title">Survivors Detected (B1/B3)</div>
+              <div className="debug-item-val" style={{ color: '#4ade80' }}>
+                {simSnapshot.detectedSurvivors || detectedSurvivorsCount} / {simSnapshot.totalSurvivors || simSnapshot.survivors.length}
+              </div>
+            </div>
+          </div>
+
+          <div style={{ margin: '8px 0' }}>
+            <button
+              type="button"
+              className="chip action-chip"
+              style={{ width: '100%', padding: '7px 10px', textAlign: 'center', background: '#0284c7', color: '#fff', fontWeight: 'bold' }}
+              disabled={testRunning}
+              onClick={handleRunVerification}
+            >
+              {testRunning ? '⏳ Running Suite Across All Scenarios...' : '▶ Run Automated Check Suite (Section I)'}
+            </button>
+          </div>
+
+          {Array.isArray(testResults) && testResults.length > 0 && (
+            <div style={{ marginTop: '8px' }}>
+              <div style={{ fontWeight: 'bold', color: '#38bdf8', marginBottom: '4px' }}>
+                Suite Results ({testResults.filter(r => r.status === 'PASS').length}/{testResults.length} Passed):
+              </div>
+              <table className="verify-table">
+                <thead>
+                  <tr>
+                    <th>Scenario</th>
+                    <th>Check</th>
+                    <th>Result</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {testResults.map((item, idx) => (
+                    <tr key={idx}>
+                      <td>{item.scenario}</td>
+                      <td title={item.details}>{item.checkId}</td>
+                      <td>
+                        <span className={item.status === 'PASS' ? 'pass-tag' : 'fail-tag'}>
+                          {item.status}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </aside>
+      )}
+      {autotestJson && <pre id="autotestResult" hidden>{autotestJson}</pre>}
+      {screenshotData && <pre id="screenshotData" hidden>{screenshotData}</pre>}
     </>
   );
 }
