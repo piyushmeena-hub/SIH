@@ -375,6 +375,7 @@ class SharedSimulationStore {
       };
     });
     this.state.world.obstacles = this.state.world.buildings;
+    this.state.pois = [];
 
     // Map 3D survivors into shared survivors array with persistent IDs SURV-01, SURV-02...
     if (Array.isArray(survivors3D) && survivors3D.length > 0) {
@@ -384,12 +385,16 @@ class SharedSimulationStore {
         const pos2D = world3DTo2D(s.x, s.z);
         return {
           id,
+          x: Number(s.x.toFixed(2)),
+          y: Number((s.y || 0).toFixed(2)),
+          z: Number(s.z.toFixed(2)),
           position: { x: Number(s.x.toFixed(2)), y: Number((s.y || 0).toFixed(2)), z: Number(s.z.toFixed(2)) },
           position2D: { x: pos2D.x, y: pos2D.y },
-          status: existing ? existing.status : 'UNASSIGNED',
-          detected: existing ? existing.detected : false,
-          assignedDrone: existing ? existing.assignedDrone : null,
-          progress: existing ? existing.progress : 0,
+          status: 'UNASSIGNED',
+          state: 'healthy',
+          detected: false,
+          assignedDrone: null,
+          progress: 0,
         };
       });
       this.logSync(`Registered ${this.state.survivors.length} 3D survivors as shared rescue PoIs (${this.state.survivors.map((s) => s.id).join(', ')})`);

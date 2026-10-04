@@ -391,6 +391,65 @@ export default function App() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
+  // Section I: headless/automated run. Open with ?autotest=1 to run the full
+  // real-engine suite on load; results are written to #autotestResult.
+  const [autotestJson, setAutotestJson] = useState(null);
+  useEffect(() => {
+    if (isLoading || !engineRef.current) return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('autotest') !== '1') return;
+    let cancelled = false;
+    (async () => {
+      const suite = new VerificationSuite(engineRef.current, sharedSim);
+      const report = await suite.runFullSuite();
+      if (cancelled) return;
+      setTestResults(report);
+      setDebugOverlayVisible(true);
+      setAutotestJson(JSON.stringify(report));
+      document.title = 'AUTOTEST_DONE';
+    })();
+    return () => { cancelled = true; };
+  }, [isLoading]);
+  const [screenshotData, setScreenshotData] = useState(null);
+  useEffect(() => {
+    if (isLoading || !engineRef.current) return;
+    const params = new URLSearchParams(window.location.search);
+    const tabParam = params.get('tab');
+    if (tabParam !== null) {
+      const tabIdx = parseInt(tabParam, 10);
+      if (!isNaN(tabIdx) && tabIdx >= 0 && tabIdx < MODES_META.length) {
+        selectMode(tabIdx);
+      }
+    }
+    const phaseParam = params.get('phase');
+    if (phaseParam) {
+      const fleet = engineRef.current?.getFleetManager ? engineRef.current.getFleetManager() : sharedSim.fleetManager;
+      if (fleet) {
+        if (phaseParam === 'start') {
+          for (let s = 0; s < 20; s++) fleet.step(0.1);
+        } else if (phaseParam === 'mid') {
+          for (let s = 0; s < 150; s++) fleet.step(0.1);
+        } else if (phaseParam === 'coverage') {
+          for (let s = 0; s < 450; s++) fleet.step(0.2);
+        } else if (phaseParam === 'nonetwork') {
+          const b = fleet.cityBounds;
+          let zx = (b.minX + b.maxX) / 2;
+          let zz = (b.minZ + b.maxZ) / 2;
+          if (Math.hypot(zx - fleet.gcsPosition.x, zz - fleet.gcsPosition.z) < 25) {
+            zx = 0;
+            zz = 0;
+          }
+          fleet.setNoNetworkZone(true, zx, zz, (b.maxX - b.minX) * 0.22);
+          for (let s = 0; s < 250; s++) fleet.step(0.1);
+        }
+      }
+      setTimeout(() => {
+        const data = engineRef.current?.captureScreenshot?.();
+        if (data) setScreenshotData(data);
+      }, 600);
+    }
+  }, [isLoading, selectMode]);
+
   const handleSpeedChange = scale => {
     setTimeScale(scale);
     setPaused(false);
@@ -1261,6 +1320,8 @@ export default function App() {
           )}
         </aside>
       )}
+      {autotestJson && <pre id="autotestResult" hidden>{autotestJson}</pre>}
+      {screenshotData && <pre id="screenshotData" hidden>{screenshotData}</pre>}
     </>
   );
 }

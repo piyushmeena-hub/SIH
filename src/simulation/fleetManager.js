@@ -228,6 +228,24 @@ export class FleetManager {
     this.noNetworkZone.x = Number(x);
     this.noNetworkZone.z = Number(z);
     this.noNetworkZone.radius = Number(radius);
+
+    if (this.noNetworkZone.active) {
+      if (this.relays.size === 0) {
+        const candidate = this.drones.find(d => !d.killed && d.status === 'alive');
+        if (candidate) {
+          candidate.role = 'RELAY';
+          this.relays.add(candidate.id);
+          const dx = x - this.gcsPosition.x;
+          const dz = z - this.gcsPosition.z;
+          const dist = Math.hypot(dx, dz) || 1;
+          const boundaryDist = Math.max(5, dist - radius + 2);
+          candidate.target = {
+            x: this.gcsPosition.x + (dx / dist) * boundaryDist,
+            z: this.gcsPosition.z + (dz / dist) * boundaryDist,
+          };
+        }
+      }
+    }
   }
 
   /**
@@ -311,10 +329,10 @@ export class FleetManager {
   /**
    * Main simulation step (called from WebGL loop at 60 Hz or test runner)
    */
-  step(dt, simTime) {
+  step(dt, _simTime) {
     if (!this.active || dt <= 0) return;
-    this.simTime = simTime || (this.simTime + dt);
     const clampedDt = Math.min(dt, 0.1);
+    this.simTime += clampedDt;
 
     // 1. Step Each Drone
     for (const d of this.drones) {
@@ -696,7 +714,7 @@ export class FleetManager {
     for (const cell of this.gridCells) {
       if (!cell.covered) {
         for (const d of this.drones) {
-          if (!d.killed && d.status === 'alive' && d.mode !== 'landed' && d.mode !== 'charging') {
+          if (!d.killed && d.status === 'alive' && d.state !== 'LAUNCH' && d.mode !== 'landed' && d.mode !== 'launch' && d.mode !== 'charging') {
             const dist = Math.hypot(cell.cx - d.position.x, cell.cz - d.position.z);
             if (dist <= FLEET_CONFIG.SENSOR_RADIUS) {
               cell.covered = true;
@@ -714,17 +732,19 @@ export class FleetManager {
     // Survivor detection: FLIR direct footprint or swept grid cell footprint
     let detectedCount = 0;
     for (const s of survivors) {
+      const sx = s.x ?? s.position?.x ?? 0;
+      const sz = s.z ?? s.position?.z ?? 0;
       if (!s.detected) {
         // Direct drone sensor footprint
         for (const d of this.drones) {
-          if (!d.killed && d.status === 'alive' && d.mode !== 'landed' && d.mode !== 'charging') {
-            const dist = Math.hypot(s.x - d.position.x, s.z - d.position.z);
+          if (!d.killed && d.status === 'alive' && d.state !== 'LAUNCH' && d.mode !== 'landed' && d.mode !== 'launch' && d.mode !== 'charging') {
+            const dist = Math.hypot(sx - d.position.x, sz - d.position.z);
             if (dist <= FLEET_CONFIG.SENSOR_RADIUS) {
               s.detected = true;
               s.detectedAt = this.simTime;
               d.detectedVictimCount = (d.detectedVictimCount || 0) + 1;
               if (this.store) {
-                this.store.logSync(`Victim ${s.id} detected by DR${d.id} at [${Math.round(s.x)}, ${Math.round(s.z)}] via FLIR/Optical sensor`);
+                this.store.logSync(`Victim ${s.id} detected by DR${d.id} at [${Math.round(sx)}, ${Math.round(sz)}] via FLIR/Optical sensor`);
               }
               break;
             }
@@ -734,12 +754,12 @@ export class FleetManager {
         if (!s.detected) {
           for (const cell of this.gridCells) {
             if (cell.covered) {
-              const dist = Math.hypot(s.x - cell.cx, s.z - cell.cz);
-              if (dist <= FLEET_CONFIG.SENSOR_RADIUS || (s.x >= cell.minX && s.x <= cell.maxX && s.z >= cell.minZ && s.z <= cell.maxZ)) {
+              const dist = Math.hypot(sx - cell.cx, sz - cell.cz);
+              if (dist <= FLEET_CONFIG.SENSOR_RADIUS || (sx >= cell.minX && sx <= cell.maxX && sz >= cell.minZ && sz <= cell.maxZ)) {
                 s.detected = true;
                 s.detectedAt = this.simTime;
                 if (this.store) {
-                  this.store.logSync(`Victim ${s.id} detected at [${Math.round(s.x)}, ${Math.round(s.z)}] via footprint coverage`);
+                  this.store.logSync(`Victim ${s.id} detected at [${Math.round(sx)}, ${Math.round(sz)}] via footprint coverage`);
                 }
                 break;
               }

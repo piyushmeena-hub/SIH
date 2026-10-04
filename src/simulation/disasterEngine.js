@@ -115,6 +115,7 @@ export function createDisasterEngine(canvas, { onStatsUpdate, onEarthquakeUpdate
   const renderer = new THREE.WebGLRenderer({
     canvas,
     antialias: true,
+    preserveDrawingBuffer: true,
     powerPreference: 'high-performance'
   });
   if (!renderer.getContext()) {
@@ -1096,9 +1097,9 @@ export function createDisasterEngine(canvas, { onStatsUpdate, onEarthquakeUpdate
         } else if (curMode.id === 'earthquake') {
           if (modeT > 1.2) isAffected = true;
         } else if (curMode.id === 'wildfire') {
-          if (Math.hypot(v.x - (-20), v.z - 0) < 52) isAffected = true;
+          if (modeT > 2.0 && Math.hypot(v.x - (-20), v.z - 0) < 52) isAffected = true;
         } else if (curMode.id === 'landslide') {
-          if (v.z < 65) isAffected = true;
+          if (modeT > 2.0 && v.z < 65) isAffected = true;
         } else if (curMode.id === 'tsunami') {
           if (modeT > 2.0) isAffected = true;
         } else if (curMode.id === 'volcano') {
@@ -2498,8 +2499,8 @@ export function createDisasterEngine(canvas, { onStatsUpdate, onEarthquakeUpdate
       let pm = poiMeshes.get(p.id);
       if (!pm) pm = makePoiMesh3D(p.id);
       pm.g.visible = true;
-      const px = p.position.x;
-      const pz = p.position.z;
+      const px = p.position?.x ?? p.x ?? 0;
+      const pz = p.position?.z ?? p.z ?? 0;
       const py = H(px, pz);
       pm.g.position.set(px, py, pz);
       pm.pin.position.y = 4.0 + Math.sin(t * 2.6 + px) * 0.35;
@@ -3220,6 +3221,7 @@ export function createDisasterEngine(canvas, { onStatsUpdate, onEarthquakeUpdate
       x: nearestVictim.x,
       y: markerY,
       z: nearestVictim.z,
+      position: { x: nearestVictim.x, y: markerY, z: nearestVictim.z },
       status: 'CRITICAL',
       priority: 1,
       targetPersonId: nearestVictim.id,
@@ -3253,10 +3255,25 @@ export function createDisasterEngine(canvas, { onStatsUpdate, onEarthquakeUpdate
     triggerEarthquake,
     setEarthquakeMagnitude,
     getEarthquakeState,
-    resetEarthquakeBuildings,
     resetSimulation() {
+      for (const pm of poiMeshes.values()) {
+        swarmGroup.remove(pm.g);
+      }
+      poiMeshes.clear();
+      sharedSim.state.pois = [];
       setMode(curModeIndex);
       resetView();
+    },
+    clearCriticalPois() {
+      for (const pm of poiMeshes.values()) {
+        swarmGroup.remove(pm.g);
+      }
+      poiMeshes.clear();
+      sharedSim.state.pois = [];
+    },
+    captureScreenshot() {
+      renderer.render(scene, camera);
+      return renderer.domElement.toDataURL('image/png');
     },
     getFleetManager() {
       return sharedSim.fleetManager;

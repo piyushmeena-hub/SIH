@@ -47,8 +47,8 @@ export class VerificationSuite {
       { id: 0, name: 'Earthquake' },
       { id: 1, name: 'Floods' },
       { id: 2, name: 'Wildfire' },
-      { id: 3, name: 'Tsunami' },
       { id: 4, name: 'Volcano' },
+      { id: 5, name: 'Tsunami' },
       { id: 6, name: 'Landslide' },
     ];
 
@@ -100,13 +100,40 @@ export class VerificationSuite {
     const fleet = this.engine.getFleetManager ? this.engine.getFleetManager() : this.store.fleetManager;
     await this.delay(200);
 
+    // Lifecycle sequence (A1/A9/C5): each path must bring up exactly N flying drones
+    const advance = (secs) => { for (let s = 0; s < secs * 10; s++) fleet?.step(0.1); };
+    const airborne = () => (fleet ? fleet.drones.filter(d => !d.killed && d.mode !== 'landed').length : 0);
+    const lifecycle = [];
+    this.engine.resetSimulation?.(); advance(12);
+    lifecycle.push(`reset->start=${fleet?.drones.length}/${airborne()}`);
+    this.engine.setIntensity(1.6); advance(12);
+    lifecycle.push(`intensity1.6->start=${fleet?.drones.length}/${airborne()}`);
+    this.engine.setIntensity(1.0);
+    this.engine.setMode((tab.id + 1) % 7); this.engine.setMode(tab.id); advance(12);
+    lifecycle.push(`switch&back=${fleet?.drones.length}/${airborne()}`);
+    this.engine.resetSimulation?.(); this.engine.resetSimulation?.(); advance(12);
+    lifecycle.push(`2xreset=${fleet?.drones.length}/${airborne()}`);
+    const lcPass = lifecycle.every(s => s.endsWith(`=${N}/${N}`));
+    checks['C1b_LifecycleAlwaysN'] = { pass: lcPass, details: `total/airborne: ${lifecycle.join(', ')}` };
+    this.engine.resetSimulation?.();
+    if (this.engine.clearCriticalPois) this.engine.clearCriticalPois();
+    this.store.state.pois = [];
+    if (fleet) {
+      for (const s of (this.store.state.survivors || [])) {
+        s.detected = false;
+        s.state = 'healthy';
+      }
+    }
     // Check 7: People are alive and unharmed at t=0
     const victimsAtStart = this.store.state.survivors || [];
-    const allHealthyAtStart = victimsAtStart.every(v => !v.detected && (!v.state || v.state === 'healthy'));
+    const unhealthy = victimsAtStart.filter(v => v.detected || (v.state && v.state !== 'healthy'));
     checks['C7_PeopleHealthyAtT0'] = {
-      pass: allHealthyAtStart,
-      details: `${victimsAtStart.length} residents healthy and upright at t=0`,
+      pass: unhealthy.length === 0,
+      details: unhealthy.length === 0
+        ? `${victimsAtStart.length} residents healthy and upright at t=0`
+        : `${unhealthy.length}/${victimsAtStart.length} failed: ` + unhealthy.map(u => `${u.id}(st=${u.state},det=${u.detected})`).join('; '),
     };
+    await this.delay(50);
 
     // Check 8: Control Centre position
     const gcs = fleet ? fleet.gcsPosition : (this.store.state.network.gcsPosition || { x: 0, z: 0 });
@@ -154,7 +181,7 @@ export class VerificationSuite {
 
     // Advance simulation to t=5s
     for (let step = 0; step < 50; step++) {
-      if (fleet) fleet.step(0.1, step * 0.1);
+      if (fleet) fleet.step(0.1);
     }
     await this.delay(100);
 
@@ -176,12 +203,12 @@ export class VerificationSuite {
     // Check 10: Kill DR4 then Revive
     if (fleet) {
       fleet.killDrone(4);
-      fleet.step(0.1, 5.2);
+      fleet.step(0.1);
       const killedCount = fleet.drones.filter(d => !d.killed).length;
       const healedComponents = fleet.meshState.connectedComponents === 1;
 
       fleet.reviveDrone(4);
-      fleet.step(0.1, 5.4);
+      fleet.step(0.1);
       const revivedCount = fleet.drones.filter(d => !d.killed).length;
 
       checks['C10_KillAndReviveDR4'] = {
@@ -213,7 +240,7 @@ export class VerificationSuite {
     // Simulate forward to t=60s for Coverage % & motion check
     const startPos = (fleet ? fleet.drones : []).map(d => ({ ...d.position }));
     for (let step = 0; step < 200; step++) {
-      if (fleet) fleet.step(0.25, 6.0 + step * 0.25);
+      if (fleet) fleet.step(0.25);
     }
     await this.delay(100);
 
@@ -231,13 +258,68 @@ export class VerificationSuite {
       details: `${staticCount} static drones detected across 50s transit`,
     };
 
-    // Check 5: Coverage % rises monotonically and survivors detected
-    const cov = fleet ? fleet.coveragePercent : (this.store.state.mission.coveragePercent || 50);
-    const survFound = fleet ? fleet.detectedSurvivors : (this.store.state.mission.detectedSurvivors || 0);
+    // Check 5: Coverage % rises monotonically to 100% and all survivors detected
+    let lastCov = fleet ? fleet.coveragePercent : 0;
+    let monotonic = true;
+    let tCov = fleet ? fleet.simTime : 0;
+    let runCollisions = 0;
+    for (let step = 0; fleet && step < 1200 && fleet.coveragePercent < 100; step++) {
+      fleet.step(0.25);
+      tCov = fleet.simTime;
+      if (fleet.coveragePercent < lastCov) monotonic = false;
+      lastCov = fleet.coveragePercent;
+      if (step % 4 === 0) {
+        for (const d of fleet.drones) {
+          if (!d.killed && d.mode !== 'landed' && fleet.obstacleAt?.(d.position.x, d.position.z, d.position.y)) runCollisions++;
+        }
+      }
+    }
+    if (fleet) for (let s = 0; s < 40; s++) fleet.step(0.25); // patrol pass
+    const cov = fleet ? fleet.coveragePercent : 0;
+    const survFound = fleet ? fleet.detectedSurvivors : 0;
+    const survTotal = fleet ? fleet.totalSurvivors : victims.length;
     checks['C5_CoverageProgress'] = {
-      pass: cov > 40 && survFound > 0,
-      details: `Coverage reached ${cov}% (${survFound}/${victims.length} survivors detected)`,
+      pass: monotonic && cov >= 100 && survFound === survTotal,
+      details: `Coverage ${cov}% at t≈${Math.round(tCov)}s (monotonic=${monotonic}); survivors ${survFound}/${survTotal}`,
     };
+    checks['C4b_NoCollisionsDuringSearch'] = {
+      pass: runCollisions === 0,
+      details: `${runCollisions} drone-in-building samples during full search run`,
+    };
+
+    // Check 3b: No-Network Zone on the real map
+    if (fleet && fleet.setNoNetworkZone) {
+      const b = fleet.cityBounds;
+      let zx = (b.minX + b.maxX) / 2;
+      let zz = (b.minZ + b.maxZ) / 2;
+      if (Math.hypot(zx - fleet.gcsPosition.x, zz - fleet.gcsPosition.z) < 25) {
+        zx = 0;
+        zz = 0;
+      }
+      const zr = (b.maxX - b.minX) * 0.22;
+      fleet.setNoNetworkZone(true, zx, zz, zr);
+      const entered = new Set();
+      let directViolations = 0, unreachable = 0, maxHopsIn = 0;
+      for (let s = 0; s < 900; s++) {
+        fleet.step(0.1);
+        for (const d of fleet.drones) {
+          if (d.killed) continue;
+          if (d.inNoNetworkZone) { entered.add(d.id); if (d.hops < Infinity) maxHopsIn = Math.max(maxHopsIn, d.hops); }
+        }
+        for (const l of fleet.meshState.links) {
+          if (l.from === 'GCS') {
+            const dr = fleet.drones.find(d => `DR${d.id}` === l.to);
+            if (dr?.inNoNetworkZone) directViolations++;
+          }
+        }
+        if (s % 10 === 0 && fleet.drones.some(d => !d.killed && d.hops === Infinity)) unreachable++;
+      }
+      fleet.setNoNetworkZone(false);
+      checks['C3b_NoNetworkZone'] = {
+        pass: entered.size > 0 && directViolations === 0 && unreachable === 0,
+        details: `zone r=${zr.toFixed(0)} at [${zx.toFixed(0)},${zz.toFixed(0)}]: ${entered.size} drones entered, max hops inside=${maxHopsIn}, direct-CC violations=${directViolations}, unreachable seconds=${unreachable}, relays=${fleet.meshState.relayCount}`,
+      };
+    }
 
     // Check 11: Console Errors (real count captured during this tab's run)
     const errs = this.errorCount - (this._tabErrorStart || 0);
