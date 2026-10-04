@@ -292,6 +292,23 @@ export default function App() {
     }
   };
 
+  const activeDrones = simSnapshot.drones.filter(d => d.mode !== 'dead');
+  const availableDronePool = activeDrones.length > 0 ? activeDrones : simSnapshot.drones;
+  const availableDronesCount = availableDronePool.length;
+
+  const handleCycleDrone = (direction = 1) => {
+    if (availableDronesCount <= 0) return;
+    const currIdx = availableDronePool.findIndex(d => d.id === simSnapshot.selectedDroneId);
+    let nextIdx = 0;
+    if (currIdx !== -1) {
+      nextIdx = (currIdx + direction + availableDronesCount) % availableDronesCount;
+    }
+    const targetDrone = availableDronePool[nextIdx];
+    if (targetDrone) {
+      handleSelectDrone(targetDrone.id);
+    }
+  };
+
   const currentMode = MODES_META[modeIndex] || MODES_META[0];
   const is3D = viewMode === '3d';
 
@@ -655,12 +672,34 @@ export default function App() {
               {selectedDrone && (
                 <div className="inspector-block" id="droneInspector">
                   <div className="inspector-head">
+                    <button
+                      type="button"
+                      className="mini-nav-btn"
+                      title="Previous UAV"
+                      disabled={availableDronesCount <= 1}
+                      onClick={() => handleCycleDrone(-1)}
+                      aria-label="Previous UAV"
+                    >
+                      ‹
+                    </button>
                     <strong>UAV {selectedDrone.id}</strong>
+                    <button
+                      type="button"
+                      className="mini-nav-btn"
+                      title="Next UAV"
+                      disabled={availableDronesCount <= 1}
+                      onClick={() => handleCycleDrone(1)}
+                      aria-label="Next UAV"
+                    >
+                      ›
+                    </button>
                     <span className={`role-badge role-${selectedDrone.role}`}>{selectedDrone.role.toUpperCase()}</span>
                     <button
                       type="button"
                       className="ghost mini-close"
                       onClick={() => sharedSim.selectDrone(null, '3d')}
+                      title="Close"
+                      aria-label="Close"
                     >
                       ✕
                     </button>
@@ -682,6 +721,16 @@ export default function App() {
                       onClick={() => engineRef.current?.focusPosition(selectedDrone.position.x, selectedDrone.position.y, selectedDrone.position.z)}
                     >
                       Focus Camera
+                    </button>
+                    <button
+                      type="button"
+                      className="chip"
+                      id="btnNextDrone3D"
+                      disabled={availableDronesCount <= 1}
+                      onClick={() => handleCycleDrone(1)}
+                      title={availableDronesCount <= 1 ? 'Only 1 UAV available' : 'Cycle to next active UAV'}
+                    >
+                      Next UAV →
                     </button>
                     <button
                       type="button"
@@ -742,7 +791,7 @@ export default function App() {
       </nav>
 
       <p className="hint" hidden={!is3D}>
-        Drag to orbit · Scroll to zoom · Click any Drone or Survivor/PoI in 3D · Press 1–7 to switch disasters
+        Drag to look/orbit · WASD / Arrows to fly 3D · Space / Shift for altitude · Scroll / +/- to zoom · Press 1–7 for disasters
       </p>
     </>
   );

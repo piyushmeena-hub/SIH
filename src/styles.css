@@ -106,6 +106,9 @@ h1{font:700 21px/1.1 'Barlow Condensed',sans-serif;letter-spacing:.01em}
 .inspector-card{padding:10px 12px;width:100%;font-size:12px}
 .inspector-head{display:flex;align-items:center;gap:8px;margin-bottom:6px}
 .role-badge{font:700 10px/1 'IBM Plex Mono',monospace;padding:3px 6px;border-radius:4px;background:rgba(56,189,248,.18);color:#38bdf8}
+.mini-nav-btn{background:rgba(255,255,255,.08);border:1px solid var(--border);color:var(--text);padding:1px 6px;border-radius:4px;cursor:pointer;font-size:13px;line-height:1;display:inline-flex;align-items:center;justify-content:center}
+.mini-nav-btn:hover:not(:disabled){background:rgba(255,255,255,.18)}
+.mini-nav-btn:disabled{opacity:.3;cursor:not-allowed}
 .mini-close{padding:2px 6px;font-size:11px}
 .inspector-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:4px 8px;color:var(--muted)}
 .inspector-grid b{color:var(--text)}

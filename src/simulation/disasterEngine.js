@@ -66,7 +66,8 @@ export const MODES_META = [
   }
 ];
 
-export function createDisasterEngine(canvas, { onStatsUpdate, onEarthquakeUpdate } = {}) {
+export function createDisasterEngine(canvas, { onStatsUpdate, onEarthquakeUpdate, moveSpeed = 45.0 } = {}) {
+  let currentMoveSpeed = typeof moveSpeed === 'number' && moveSpeed > 0 ? moveSpeed : 45.0;
   const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   /* ---------- helpers ---------- */
@@ -3806,13 +3807,35 @@ export function createDisasterEngine(canvas, { onStatsUpdate, onEarthquakeUpdate
   }
 
   /* ---------- camera & 3D selection raycasting ---------- */
-  // gr/gt are the zoom goals; r/target ease towards them each frame for smooth zooming.
-  const orbit = { theta: 0.9, phi: 0.95, r: 150, target: new THREE.Vector3(), gr: 150, gt: new THREE.Vector3(), auto: !reduced };
+  const orbit = { theta: 0.9, phi: 0.95, r: 150, target: new THREE.Vector3(), auto: !reduced };
   const ptrs = new Map();
-  let pinchD = 0;
+  let pinch0 = 0, r0 = 0;
   let downPos = null;
   const raycaster = new THREE.Raycaster();
   const pointerNdc = new THREE.Vector2();
+
+  // Active keyboard state object for smooth, continuous 3D POV fly movement
+  const keyState = {
+    forward: false,
+    backward: false,
+    left: false,
+    right: false,
+    up: false,
+    down: false,
+  };
+
+  // Pre-allocated vectors for continuous render loop movement (zero GC allocations)
+  const _camForward = new THREE.Vector3();
+  const _camRight = new THREE.Vector3();
+  const _moveDir = new THREE.Vector3();
+  const _worldUp = new THREE.Vector3(0, 1, 0);
+
+  // Compatible controls reference for OrbitControls / MapControls integrations
+  const controls = {
+    target: orbit.target,
+    update: () => updateCamera()
+  };
+  camera.userData.controls = controls;
 
   function pick3DObject(clientX, clientY) {
     const rect = canvas.getBoundingClientRect();
@@ -3857,69 +3880,22 @@ export function createDisasterEngine(canvas, { onStatsUpdate, onEarthquakeUpdate
     }
     if (ptrs.size === 2) {
       const [a, b] = [...ptrs.values()];
-      pinchD = Math.hypot(a.x - b.x, a.y - b.y);
+      pinch0 = Math.hypot(a.x - b.x, a.y - b.y);
+      r0 = orbit.r;
     }
   };
 
-  // Point on the terrain under a screen position, found by marching along the camera ray.
-  const _gp = new THREE.Vector3();
-  function groundPointAt(clientX, clientY, out) {
-    const rect = canvas.getBoundingClientRect();
-    if (!rect.width || !rect.height) return false;
-    pointerNdc.x = ((clientX - rect.left) / rect.width) * 2 - 1;
-    pointerNdc.y = -((clientY - rect.top) / rect.height) * 2 + 1;
-    raycaster.setFromCamera(pointerNdc, camera);
-    const o = raycaster.ray.origin, d = raycaster.ray.direction, lim = W / 2;
-    let prev = 0;
-    for (let s = 1.5; s < 800; s += 1.5) {
-      _gp.copy(o).addScaledVector(d, s);
-      if (Math.abs(_gp.x) > lim || Math.abs(_gp.z) > lim) {
-        if (d.y >= 0 || s > 200) break;
-        prev = s;
-        continue;
-      }
-      if (_gp.y <= H(_gp.x, _gp.z)) {
-        let a = prev, b = s;
-        for (let k = 0; k < 12; k++) {
-          const m = (a + b) / 2;
-          _gp.copy(o).addScaledVector(d, m);
-          if (_gp.y <= H(_gp.x, _gp.z)) b = m;
-          else a = m;
-        }
-        out.copy(o).addScaledVector(d, b);
-        return true;
-      }
-      prev = s;
-    }
-    return false;
-  }
-
-  // Zoom about the ground point under the cursor: scaling camera and target around that point
-  // keeps it fixed on screen. Falls back to zooming on the view centre over empty sky.
-  const _zp = new THREE.Vector3();
-  function zoomAt(clientX, clientY, factor) {
-    const nr = clamp(orbit.gr * factor, 35, 280), f = nr / orbit.gr;
-    if (Math.abs(f - 1) < 1e-4) return;
-    if (groundPointAt(clientX, clientY, _zp)) {
-      orbit.gt.sub(_zp).multiplyScalar(f).add(_zp);
-      orbit.gt.x = clamp(orbit.gt.x, -130, 130);
-      orbit.gt.z = clamp(orbit.gt.z, -130, 130);
-      orbit.gt.y = Math.max(orbit.gt.y, H(orbit.gt.x, orbit.gt.z));
-    }
-    orbit.gr = nr;
-  }
   const onPtrMove = e => {
     if (!ptrs.has(e.pointerId)) return;
     const prev = ptrs.get(e.pointerId), cur = { x: e.clientX, y: e.clientY };
     ptrs.set(e.pointerId, cur);
     if (ptrs.size === 1) {
       orbit.theta -= (cur.x - prev.x) * 0.006;
-      orbit.phi = clamp(orbit.phi - (cur.y - prev.y) * 0.005, 0.2, 1.45);
+      orbit.phi = clamp(orbit.phi - (cur.y - prev.y) * 0.005, 0.08, 3.05);
     } else if (ptrs.size === 2) {
       const [a, b] = [...ptrs.values()];
       const d = Math.hypot(a.x - b.x, a.y - b.y);
-      if (d > 1 && pinchD > 1) zoomAt((a.x + b.x) / 2, (a.y + b.y) / 2, pinchD / d);
-      pinchD = d;
+      if (d > 1 && pinch0 > 1) orbit.r = clamp((r0 * pinch0) / d, 15, 450);
     }
   };
   const up = e => {
@@ -3932,14 +3908,86 @@ export function createDisasterEngine(canvas, { onStatsUpdate, onEarthquakeUpdate
     downPos = null;
     ptrs.delete(e.pointerId);
   };
-  const clearPtrs = () => {
+  const clearAllInput = () => {
     downPos = null;
     ptrs.clear();
+    keyState.forward = false;
+    keyState.backward = false;
+    keyState.left = false;
+    keyState.right = false;
+    keyState.up = false;
+    keyState.down = false;
   };
   const onWheel = e => {
     e.preventDefault();
-    const dy = e.deltaMode === 1 ? e.deltaY * 33 : e.deltaMode === 2 ? e.deltaY * 400 : e.deltaY;
-    zoomAt(e.clientX, e.clientY, clamp(1 + dy * 0.0012, 0.7, 1.4));
+    orbit.r = clamp(orbit.r * (1 + e.deltaY * 0.0012), 15, 450);
+  };
+
+  const onKeyDown = e => {
+    const tag = e.target?.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || e.target?.isContentEditable) return;
+    const k = e.key;
+    const code = e.code;
+    let handled = false;
+
+    if (code === 'KeyW' || k === 'w' || k === 'W' || code === 'ArrowUp' || k === 'ArrowUp') {
+      keyState.forward = true;
+      handled = true;
+    } else if (code === 'KeyS' || k === 's' || k === 'S' || code === 'ArrowDown' || k === 'ArrowDown') {
+      keyState.backward = true;
+      handled = true;
+    } else if (code === 'KeyA' || k === 'a' || k === 'A' || code === 'ArrowLeft' || k === 'ArrowLeft') {
+      keyState.left = true;
+      handled = true;
+    } else if (code === 'KeyD' || k === 'd' || k === 'D' || code === 'ArrowRight' || k === 'ArrowRight') {
+      keyState.right = true;
+      handled = true;
+    } else if (code === 'Space' || k === ' ' || k === 'Spacebar') {
+      keyState.up = true;
+      handled = true;
+    } else if (code === 'ShiftLeft' || code === 'ShiftRight' || k === 'Shift') {
+      keyState.down = true;
+      handled = true;
+    } else if (k === '+' || k === '=') {
+      orbit.r = clamp(orbit.r * 0.92, 15, 450);
+      handled = true;
+    } else if (k === '-' || k === '_') {
+      orbit.r = clamp(orbit.r * 1.08, 15, 450);
+      handled = true;
+    } else if (code === 'KeyQ' || k === 'q' || k === 'Q') {
+      orbit.theta -= 0.05;
+      handled = true;
+    } else if (code === 'KeyE' || k === 'e' || k === 'E') {
+      orbit.theta += 0.05;
+      handled = true;
+    }
+
+    if (handled && (k.startsWith('Arrow') || k === ' ' || code === 'Space')) {
+      e.preventDefault();
+    }
+  };
+
+  const onKeyUp = e => {
+    const k = e.key;
+    const code = e.code;
+    if (code === 'KeyW' || k === 'w' || k === 'W' || code === 'ArrowUp' || k === 'ArrowUp') {
+      keyState.forward = false;
+    }
+    if (code === 'KeyS' || k === 's' || k === 'S' || code === 'ArrowDown' || k === 'ArrowDown') {
+      keyState.backward = false;
+    }
+    if (code === 'KeyA' || k === 'a' || k === 'A' || code === 'ArrowLeft' || k === 'ArrowLeft') {
+      keyState.left = false;
+    }
+    if (code === 'KeyD' || k === 'd' || k === 'D' || code === 'ArrowRight' || k === 'ArrowRight') {
+      keyState.right = false;
+    }
+    if (code === 'Space' || k === ' ' || k === 'Spacebar') {
+      keyState.up = false;
+    }
+    if (code === 'ShiftLeft' || code === 'ShiftRight' || k === 'Shift') {
+      keyState.down = false;
+    }
   };
 
   canvas.addEventListener('pointerdown', onPtrDown);
@@ -3947,32 +3995,86 @@ export function createDisasterEngine(canvas, { onStatsUpdate, onEarthquakeUpdate
   canvas.addEventListener('pointerup', up);
   canvas.addEventListener('pointercancel', up);
   canvas.addEventListener('lostpointercapture', up);
-  window.addEventListener('blur', clearPtrs);
+  window.addEventListener('blur', clearAllInput);
   canvas.addEventListener('wheel', onWheel, { passive: false });
+  window.addEventListener('keydown', onKeyDown);
+  window.addEventListener('keyup', onKeyUp);
 
-  const onKeyCamera = e => {
-    const tag = e.target?.tagName;
-    if (tag === 'INPUT' || tag === 'TEXTAREA' || e.target?.isContentEditable) return;
-    if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') {
-      orbit.theta -= 0.05;
-    } else if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') {
-      orbit.theta += 0.05;
-    } else if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') {
-      orbit.phi = clamp(orbit.phi - 0.04, 0.2, 1.45);
-    } else if (e.key === 'ArrowDown' || e.key === 's' || e.key === 'S') {
-      orbit.phi = clamp(orbit.phi + 0.04, 0.2, 1.45);
-    } else if (e.key === '+' || e.key === '=') {
-      orbit.r = orbit.gr = clamp(orbit.gr * 0.92, 35, 280);
-    } else if (e.key === '-' || e.key === '_') {
-      orbit.r = orbit.gr = clamp(orbit.gr * 1.08, 35, 280);
+  function updateKeyboardMovement(dt) {
+    if (!keyState.forward && !keyState.backward && !keyState.left && !keyState.right && !keyState.up && !keyState.down) {
+      return;
     }
-  };
-  window.addEventListener('keydown', onKeyCamera);
+
+    // 1. Calculate camera true 3D forward vector based on current rotation / perspective (full 3D fly movement)
+    camera.getWorldDirection(_camForward);
+    if (_camForward.lengthSq() > 0.0001) {
+      _camForward.normalize();
+    } else {
+      _camForward.set(0, 0, -1);
+    }
+
+    // 2. Calculate camera lateral right vector relative to 3D forward and world up
+    _camRight.crossVectors(_camForward, _worldUp);
+    if (_camRight.lengthSq() > 0.0001) {
+      _camRight.normalize();
+    } else {
+      _camRight.set(1, 0, 0);
+    }
+
+    // 3. Accumulate full 3D movement direction (X, Y, Z)
+    _moveDir.set(0, 0, 0);
+    if (keyState.forward) _moveDir.add(_camForward);
+    if (keyState.backward) _moveDir.sub(_camForward);
+    if (keyState.right) _moveDir.add(_camRight);
+    if (keyState.left) _moveDir.sub(_camRight);
+    // Dedicated vertical elevation controls: Spacebar = ascend (+Y), Shift = descend (-Y)
+    if (keyState.up) _moveDir.y += 1.0;
+    if (keyState.down) _moveDir.y -= 1.0;
+
+    if (_moveDir.lengthSq() === 0) return;
+    _moveDir.normalize();
+
+    // 4. Multiply by configurable moveSpeed and deltaTime smoothly across all three axes (X, Y, Z)
+    const step = currentMoveSpeed * dt;
+    const deltaX = _moveDir.x * step;
+    const deltaY = _moveDir.y * step;
+    const deltaZ = _moveDir.z * step;
+
+    // 5. Full 3D free-flight updates (NO artificial boundary restrictions or invisible walls)
+    orbit.target.x += deltaX;
+    orbit.target.y += deltaY;
+    orbit.target.z += deltaZ;
+
+    // Soft floor prevents target from sinking below bedrock
+    const minGroundY = H(orbit.target.x, orbit.target.z) + 0.5;
+    if (orbit.target.y < minGroundY) {
+      orbit.target.y = minGroundY;
+    }
+
+    // Controls target synchronization: update controls.target proportionately on all axes (including Y)
+    const activeControls = camera.userData?.controls || scene.userData?.controls || controls;
+    if (activeControls && activeControls.target) {
+      activeControls.target.x = orbit.target.x;
+      activeControls.target.y = orbit.target.y;
+      activeControls.target.z = orbit.target.z;
+      if (typeof activeControls.update === 'function' && activeControls !== controls) {
+        activeControls.update();
+      }
+    }
+
+    camera.position.x += deltaX;
+    camera.position.y += deltaY;
+    camera.position.z += deltaZ;
+
+    // Synchronize directional sunlight / shadow projection target with camera POV
+    sun.position.set(orbit.target.x + 70, orbit.target.y + 120, orbit.target.z + 50);
+    sun.target.position.copy(orbit.target);
+  }
 
   function updateCamera() {
     const t = orbit.target, s = Math.sin(orbit.phi);
     camera.position.set(t.x + orbit.r * s * Math.sin(orbit.theta), t.y + orbit.r * Math.cos(orbit.phi), t.z + orbit.r * s * Math.cos(orbit.theta));
-    const gy = H(camera.position.x, camera.position.z) + 4;
+    const gy = H(camera.position.x, camera.position.z) + 1.2;
     if (camera.position.y < gy) camera.position.y = gy;
     camera.lookAt(t);
   }
@@ -3981,8 +4083,7 @@ export function createDisasterEngine(canvas, { onStatsUpdate, onEarthquakeUpdate
     if (!curMode) return;
     const m = curMode, ct = m.camTarget || m.town;
     orbit.target.set(ct[0], m._townLevel, ct[1]);
-    orbit.gt.copy(orbit.target);
-    orbit.r = orbit.gr = m.camR || 150;
+    orbit.r = m.camR || 150;
     orbit.theta = 0.9;
     orbit.phi = 0.95;
     sun.position.set(orbit.target.x + 70, orbit.target.y + 120, orbit.target.z + 50);
@@ -3991,8 +4092,7 @@ export function createDisasterEngine(canvas, { onStatsUpdate, onEarthquakeUpdate
 
   function focusPosition(x, y, z) {
     orbit.target.set(x, y ?? H(x, z), z);
-    orbit.gt.copy(orbit.target);
-    orbit.r = orbit.gr = clamp(orbit.gr, 55, 110);
+    orbit.r = clamp(orbit.r, 55, 110);
   }
 
   function emitStats() {
@@ -4204,10 +4304,11 @@ export function createDisasterEngine(canvas, { onStatsUpdate, onEarthquakeUpdate
     // Always update the 3D Swarm C2 visualization from SharedSimulationState
     updateSwarmLayer(dt, modeT);
 
-    if (orbit.auto && ptrs.size === 0) orbit.theta += dt * 0.05;
-    const zk = 1 - Math.exp(-dt * 10);
-    orbit.r += (orbit.gr - orbit.r) * zk;
-    orbit.target.lerp(orbit.gt, zk);
+    // Keyboard-based camera navigation (POV control)
+    updateKeyboardMovement(dt);
+
+    const isNavigatingPOV = keyState.forward || keyState.backward || keyState.left || keyState.right || keyState.up || keyState.down;
+    if (orbit.auto && ptrs.size === 0 && !isNavigatingPOV) orbit.theta += dt * 0.05;
     updateCamera();
     renderer.render(scene, camera);
     hudAcc += dt;
@@ -4231,6 +4332,13 @@ export function createDisasterEngine(canvas, { onStatsUpdate, onEarthquakeUpdate
     setEarthquakeMagnitude,
     getEarthquakeState,
     resetEarthquakeBuildings,
+    controls,
+    setMoveSpeed(speed) {
+      if (typeof speed === 'number' && speed > 0) currentMoveSpeed = speed;
+    },
+    getMoveSpeed() {
+      return currentMoveSpeed;
+    },
   };
   sharedSim.register3DController(ctrl3D);
 
@@ -4278,6 +4386,13 @@ export function createDisasterEngine(canvas, { onStatsUpdate, onEarthquakeUpdate
       emitStats();
       return st;
     },
+    controls,
+    setMoveSpeed(speed) {
+      if (typeof speed === 'number' && speed > 0) currentMoveSpeed = speed;
+    },
+    getMoveSpeed() {
+      return currentMoveSpeed;
+    },
     dispose() {
       if (disposed) return;
       disposed = true;
@@ -4289,8 +4404,9 @@ export function createDisasterEngine(canvas, { onStatsUpdate, onEarthquakeUpdate
       earthquakeState.active = false;
       earthquakeState.elapsed = 0.0;
       window.removeEventListener('resize', resize);
-      window.removeEventListener('blur', clearPtrs);
-      window.removeEventListener('keydown', onKeyCamera);
+      window.removeEventListener('blur', clearAllInput);
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
       document.removeEventListener('visibilitychange', onVisChange);
       canvas.removeEventListener('pointerdown', onPtrDown);
       canvas.removeEventListener('pointermove', onPtrMove);
