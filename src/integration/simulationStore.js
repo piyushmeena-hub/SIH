@@ -5,6 +5,7 @@ import coordinateMapper, {
   radius3DTo2D,
 } from './coordinateMapper';
 import { SIM_EVENTS, SimulationEventBus } from './simulationEvents';
+import { FleetManager, FLEET_CONFIG } from '../simulation/fleetManager';
 
 /**
  * SharedSimulationStore
@@ -18,6 +19,7 @@ class SharedSimulationStore {
     this.ctrl2D = null;
     this.ctrl3D = null;
     this.heightFn3D = null;
+    this.fleetManager = new FleetManager(this);
 
     // Track previous values to emit edge-triggered [SYNC] logs without frame spam
     this._prevAssignments = new Map();
@@ -212,43 +214,110 @@ class SharedSimulationStore {
     this.events.emit(SIM_EVENTS.POI_UPDATED, { poiId: id, poi: poiObj, source });
   }
 
-  // --- Authoritative Actions Delegated to 2D Swarm Engine --------------------
+  // --- Authoritative Actions via FleetManager --------------------
   killDrone(droneId, source = 'ui') {
-    const targetId = droneId || this.state.selection.selectedDroneId;
+    const rawId = droneId || this.state.selection.selectedDroneId || 4;
+    const targetId = typeof rawId === 'string' ? parseInt(rawId.replace(/\D/g, ''), 10) : Number(rawId);
     if (!targetId) return false;
-    if (this.ctrl2D && typeof this.ctrl2D.killDrone === 'function') {
-      const ok = this.ctrl2D.killDrone(targetId);
-      if (ok) {
-        this.logSync(`Drone killed: ${targetId} (triggered from ${source.toUpperCase()})`, { droneId: targetId });
-        this.events.emit(SIM_EVENTS.DRONE_DOWN, { droneId: targetId, source });
-      }
-      return ok;
+
+    let ok = false;
+    if (this.fleetManager) {
+      ok = this.fleetManager.killDrone(targetId);
     }
-    return false;
+    if (this.ctrl2D && typeof this.ctrl2D.killDrone === 'function') {
+      this.ctrl2D.killDrone(targetId);
+    }
+
+    if (ok) {
+      this.logSync(`Drone killed: DR${targetId} (triggered from ${source.toUpperCase()}) - Mesh auto-repair active`, { droneId: targetId });
+      this.events.emit(SIM_EVENTS.DRONE_DOWN, { droneId: targetId, source });
+    }
+    return ok;
+  }
+
+  reviveDrone(droneId = 4, source = 'ui') {
+    const rawId = droneId || 4;
+    const targetId = typeof rawId === 'string' ? parseInt(rawId.replace(/\D/g, ''), 10) : Number(rawId);
+    if (!targetId) return false;
+
+    let ok = false;
+    if (this.fleetManager) {
+      ok = this.fleetManager.reviveDrone(targetId);
+    }
+    if (ok) {
+      this.logSync(`Drone revived: DR${targetId} (triggered from ${source.toUpperCase()}) - Fleet restored to N`, { droneId: targetId });
+      this.events.emit(SIM_EVENTS.FLEET_UPDATED, { droneId: targetId, source });
+    }
+    return ok;
   }
 
   addCriticalPoi(opts = {}, source = 'ui') {
-    if (this.ctrl2D && typeof this.ctrl2D.addCriticalPoi === 'function') {
-      const created = this.ctrl2D.addCriticalPoi(opts);
-      if (created) {
-        this.logSync(`New critical PoI created: ${created.id} at 2D(${Math.round(created.x)}, ${Math.round(created.y)}) from ${source.toUpperCase()}`);
-        this.events.emit(SIM_EVENTS.POI_CREATED, { poi: created, source });
-      }
-      return created;
+    // Shared code for all tabs including Tsunami (B4, G1)
+    if (this.ctrl3D && typeof this.ctrl3D.addCriticalPoi === 'function') {
+      return this.ctrl3D.addCriticalPoi(opts);
     }
-    return null;
+
+    // Fallback: search nearest person inside city bounds
+    const survivors = this.state.survivors || [];
+    const bounds = this.state.world?.cityBounds || { minX: -54, maxX: 54, minZ: -54, maxZ: 54 };
+    const validPeople = survivors.filter(s =>
+      s.x >= bounds.minX && s.x <= bounds.maxX && s.z >= bounds.minZ && s.z <= bounds.maxZ
+    );
+
+    if (validPeople.length === 0) {
+      this.logSync('No person in range inside observation rectangle to designate as critical POI.');
+      return null;
+    }
+
+    // Attach to first available person
+    const target = validPeople[0];
+    const poiId = `CRIT-${target.id}`;
+    const created = {
+      id: poiId,
+      name: `Critical POI (${target.id})`,
+      x: target.x,
+      y: (target.y || 0) + 2.5,
+      z: target.z,
+      status: 'CRITICAL',
+      priority: 1,
+      targetPersonId: target.id,
+    };
+    this.state.pois.push(created);
+    this.logSync(`Critical POI created: ${poiId} attached to person ${target.id} at [${Math.round(target.x)}, ${Math.round(target.z)}]`);
+    this.events.emit(SIM_EVENTS.POI_CREATED, { poi: created, source });
+    return created;
+  }
+
+  toggleNoNetworkZone(active, x = 20, z = 10, radius = 35, source = 'ui') {
+    const isAct = Boolean(active);
+    if (this.fleetManager) {
+      this.fleetManager.setNoNetworkZone(isAct, x, z, radius);
+    }
+    // Update store hazard list
+    let zone = this.state.hazards.jammerZones[0];
+    if (!zone) {
+      zone = {
+        id: 'no-network-zone-1',
+        name: 'No Network Zone',
+        on: isAct,
+        position3D: { x, y: 0, z },
+        radius3D: radius,
+      };
+      this.state.hazards.jammerZones.push(zone);
+    } else {
+      zone.on = isAct;
+      zone.position3D = { x, y: 0, z };
+      zone.radius3D = radius;
+    }
+    this.logSync(`No-Network Zone ${isAct ? 'ENABLED' : 'DISABLED'} at [${x}, ${z}] r=${radius}m (from ${source.toUpperCase()})`);
+    this.events.emit(SIM_EVENTS.JAMMER_CHANGED, { zone, source });
+    return zone;
   }
 
   addJammer(opts = {}, source = 'ui') {
-    if (this.ctrl2D && typeof this.ctrl2D.addJammer === 'function') {
-      const jammer = this.ctrl2D.addJammer(opts);
-      if (jammer) {
-        this.logSync(`RF Jammer deployed at 2D(${Math.round(jammer.x)}, ${Math.round(jammer.y)}) [${jammer.erpDbm} dBm] from ${source.toUpperCase()}`);
-        this.events.emit(SIM_EVENTS.JAMMER_CHANGED, { jammer, source });
-      }
-      return jammer;
-    }
-    return null;
+    // Kept for backward compatibility, mapped to No Network Zone
+    const currentOn = this.state.hazards.jammerZones?.[0]?.on;
+    return this.toggleNoNetworkZone(!currentOn, opts.x || 20, opts.z || 10, opts.radius || 35, source);
   }
 
   addGpsZone(opts = {}, source = 'ui') {

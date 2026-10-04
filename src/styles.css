@@ -205,5 +205,26 @@ h1{font:700 21px/1.1 'Barlow Condensed',sans-serif;letter-spacing:.01em}
 .hazard-badge-pill{font:700 10px 'IBM Plex Mono',monospace;padding:2px 6px;border-radius:4px}
 .hazard-FIRE{background:rgba(239,68,68,.25);color:#fca5a5;border:1px solid rgba(239,68,68,.5)}
 .hazard-GAS,.hazard-PLUM{background:rgba(234,179,8,.25);color:#fde047;border:1px solid rgba(234,179,8,.5)}
-.hazard-ROAD{background:rgba(249,115,22,.25);color:#fdba74;border:1px solid rgba(249,115,22,.5)}
+.hud-metrics-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:6px;margin:8px 0 10px 0}
+.hud-metric-card{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:6px;padding:6px 8px;display:flex;flex-direction:column;gap:2px}
+.hud-metric-label{font:600 9.5px 'Barlow',sans-serif;color:#94a3b8;letter-spacing:.04em;text-transform:uppercase}
+.hud-metric-val{font:700 12px/1.2 'IBM Plex Mono',monospace;color:#f8fafc}
+.hud-metric-val.ok{color:#4ade80}
+.hud-metric-val.warn{color:#facc15}
+.hud-metric-val.danger{color:#f87171}
+.fleet-warn-badge{font:700 9px 'IBM Plex Mono',monospace;background:rgba(239,68,68,.3);color:#fca5a5;padding:1px 4px;border-radius:3px;border:1px solid rgba(239,68,68,.6);margin-left:4px}
 
+.debug-overlay{position:fixed;bottom:18px;right:18px;width:380px;max-height:85vh;overflow-y:auto;background:rgba(15,23,42,.92);border:1px solid rgba(56,189,248,.4);box-shadow:0 12px 36px rgba(0,0,0,.6);border-radius:10px;padding:12px;z-index:9999;backdrop-filter:blur(8px);font-family:'IBM Plex Mono',monospace;color:#e2e8f0;font-size:11px}
+.debug-overlay-header{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid rgba(255,255,255,.1);padding-bottom:6px;margin-bottom:8px}
+.debug-overlay-title{font:700 12px 'Barlow',sans-serif;color:#38bdf8;letter-spacing:.05em}
+.debug-close-btn{background:transparent;border:0;color:#94a3b8;font-size:14px;cursor:pointer;padding:0 4px}
+.debug-close-btn:hover{color:#fff}
+.debug-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:10px}
+.debug-item{background:rgba(255,255,255,.03);padding:4px 6px;border-radius:4px;border:1px solid rgba(255,255,255,.05)}
+.debug-item-title{font-size:9.5px;color:#94a3b8}
+.debug-item-val{font-size:11.5px;font-weight:700}
+.verify-table{width:100%;border-collapse:collapse;margin-top:8px;font-size:10px}
+.verify-table th{background:rgba(255,255,255,.06);padding:4px 6px;text-align:left;color:#94a3b8;border-bottom:1px solid rgba(255,255,255,.1)}
+.verify-table td{padding:4px 6px;border-bottom:1px solid rgba(255,255,255,.04)}
+.pass-tag{color:#4ade80;font-weight:700}
+.fail-tag{color:#f87171;font-weight:700}
