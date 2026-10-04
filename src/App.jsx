@@ -65,6 +65,98 @@ export default function App() {
   const [testRunning, setTestRunning] = useState(false);
   const [activeSubsystemTab, setActiveSubsystemTab] = useState('fleet'); // 'fleet', 'fanet', 'ai', 'octomap'
 
+  // Control Box Size Customization (persisted in localStorage)
+  const [boxWidth, setBoxWidth] = useState(() => {
+    try {
+      const saved = localStorage.getItem('sim_control_box_width');
+      return saved ? Math.max(280, Math.min(800, parseInt(saved, 10))) : 420;
+    } catch {
+      return 420;
+    }
+  });
+  const [boxHeight, setBoxHeight] = useState(() => {
+    try {
+      const saved = localStorage.getItem('sim_control_box_height');
+      return saved ? Math.max(200, Math.min(1200, parseInt(saved, 10))) : null;
+    } catch {
+      return null;
+    }
+  });
+  const [boxScale, setBoxScale] = useState(() => {
+    try {
+      const saved = localStorage.getItem('sim_control_box_scale');
+      return saved ? Math.max(0.75, Math.min(1.3, parseFloat(saved))) : 1;
+    } catch {
+      return 1;
+    }
+  });
+  const [showSizeSlider, setShowSizeSlider] = useState(false);
+  const controlsCardRef = useRef(null);
+
+  const handleBoxWidthChange = useCallback((val) => {
+    const clamped = Math.max(280, Math.min(800, val));
+    setBoxWidth(clamped);
+    try { localStorage.setItem('sim_control_box_width', String(clamped)); } catch {}
+  }, []);
+
+  const handleBoxScaleChange = useCallback((val) => {
+    const clamped = Math.max(0.75, Math.min(1.3, val));
+    setBoxScale(clamped);
+    try { localStorage.setItem('sim_control_box_scale', String(clamped)); } catch {}
+  }, []);
+
+  const setBoxPreset = useCallback((preset) => {
+    let w = 420;
+    if (preset === 'S') w = 340;
+    else if (preset === 'M') w = 420;
+    else if (preset === 'L') w = 520;
+    else if (preset === 'XL') w = 640;
+    setBoxWidth(w);
+    try { localStorage.setItem('sim_control_box_width', String(w)); } catch {}
+  }, []);
+
+  const handleResetBoxSize = useCallback(() => {
+    setBoxWidth(420);
+    setBoxHeight(null);
+    setBoxScale(1);
+    try {
+      localStorage.removeItem('sim_control_box_width');
+      localStorage.removeItem('sim_control_box_height');
+      localStorage.removeItem('sim_control_box_scale');
+    } catch {}
+  }, []);
+
+  const handleResizeStart = useCallback((type) => (e) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const startW = boxWidth;
+    const startH = boxHeight || controlsCardRef.current?.offsetHeight || 500;
+
+    const onPointerMove = (moveEvent) => {
+      if (type === 'left' || type === 'corner') {
+        const dx = startX - moveEvent.clientX;
+        const newW = Math.max(280, Math.min(Math.min(800, window.innerWidth - 40), startW + dx));
+        setBoxWidth(Math.round(newW));
+        try { localStorage.setItem('sim_control_box_width', String(Math.round(newW))); } catch {}
+      }
+      if (type === 'bottom' || type === 'corner') {
+        const dy = moveEvent.clientY - startY;
+        const newH = Math.max(220, Math.min(window.innerHeight - 80, startH + dy));
+        setBoxHeight(Math.round(newH));
+        try { localStorage.setItem('sim_control_box_height', String(Math.round(newH))); } catch {}
+      }
+    };
+
+    const onPointerUp = () => {
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onPointerUp);
+    };
+
+    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', onPointerUp);
+  }, [boxWidth, boxHeight]);
+
   // Initialize Backend WebSocket Bridge on port 8080
   useEffect(() => {
     backendBridge.init(8080);
@@ -852,8 +944,130 @@ export default function App() {
           </div>
         </section>
 
-        <div className="right-stack">
-          <section className="card controls" aria-label="Scene controls">
+        <div
+          className="right-stack"
+          style={{
+            width: is3D ? `${boxWidth}px` : undefined,
+            maxWidth: 'calc(100vw - 2.5rem)',
+            transform: is3D && boxScale !== 1 ? `scale(${boxScale})` : undefined,
+            transformOrigin: 'top right',
+          }}
+        >
+          <section
+            ref={controlsCardRef}
+            className="card controls"
+            aria-label="Scene controls"
+            style={is3D ? {
+              maxHeight: boxHeight ? `${boxHeight}px` : 'calc(100vh - 100px)',
+              overflowY: 'auto',
+            } : undefined}
+          >
+            {is3D && (
+              <>
+                {/* Interactive drag-to-resize handles */}
+                <div
+                  className="controls-resize-handle left"
+                  onPointerDown={handleResizeStart('left')}
+                  title="Drag left/right to resize box width"
+                />
+                <div
+                  className="controls-resize-handle bottom"
+                  onPointerDown={handleResizeStart('bottom')}
+                  title="Drag up/down to resize box height"
+                />
+                <div
+                  className="controls-resize-handle corner"
+                  onPointerDown={handleResizeStart('corner')}
+                  title="Drag corner to resize both width and height"
+                />
+
+                {/* Box Size Customizer Toolbar */}
+                <div className="box-size-bar">
+                  <div className="box-size-label">
+                    <span className="box-size-icon" aria-hidden="true">📐</span>
+                    <span>Box: <b>{boxWidth}px</b>{boxScale !== 1 ? ` (${(boxScale * 100).toFixed(0)}%)` : ''}</span>
+                  </div>
+                  <div className="box-size-presets" role="group" aria-label="Box size presets">
+                    <button
+                      type="button"
+                      className={`size-chip ${boxWidth <= 350 ? 'active' : ''}`}
+                      title="Compact Width (340px)"
+                      onClick={() => setBoxPreset('S')}
+                    >
+                      S
+                    </button>
+                    <button
+                      type="button"
+                      className={`size-chip ${boxWidth > 350 && boxWidth <= 440 ? 'active' : ''}`}
+                      title="Default Width (420px)"
+                      onClick={() => setBoxPreset('M')}
+                    >
+                      M
+                    </button>
+                    <button
+                      type="button"
+                      className={`size-chip ${boxWidth > 440 && boxWidth <= 550 ? 'active' : ''}`}
+                      title="Wide Width (520px)"
+                      onClick={() => setBoxPreset('L')}
+                    >
+                      L
+                    </button>
+                    <button
+                      type="button"
+                      className={`size-chip ${boxWidth > 550 ? 'active' : ''}`}
+                      title="Extra Wide Width (640px)"
+                      onClick={() => setBoxPreset('XL')}
+                    >
+                      XL
+                    </button>
+                    <button
+                      type="button"
+                      className={`size-chip ${showSizeSlider ? 'active' : ''}`}
+                      title="Custom Width & Scale Settings"
+                      onClick={() => setShowSizeSlider(s => !s)}
+                    >
+                      ⚙️
+                    </button>
+                    <button
+                      type="button"
+                      className="size-chip"
+                      title="Reset Box Size to Default (420px / 100%)"
+                      onClick={handleResetBoxSize}
+                    >
+                      ↺
+                    </button>
+                  </div>
+                </div>
+
+                {showSizeSlider && (
+                  <div className="box-size-custom-panel">
+                    <label className="range box-size-range">
+                      <span>Width: <b>{boxWidth}px</b></span>
+                      <input
+                        type="range"
+                        min="280"
+                        max="750"
+                        step="10"
+                        value={boxWidth}
+                        onChange={e => handleBoxWidthChange(Number(e.target.value))}
+                      />
+                    </label>
+                    <label className="range box-size-range">
+                      <span>Scale: <b>{(boxScale * 100).toFixed(0)}%</b></span>
+                      <input
+                        type="range"
+                        min="0.80"
+                        max="1.25"
+                        step="0.05"
+                        value={boxScale}
+                        onChange={e => handleBoxScaleChange(Number(e.target.value))}
+                      />
+                    </label>
+                  </div>
+                )}
+              </>
+            )}
+
             <div className="view-toggle" role="group" aria-label="Switch between 2D and 3D model">
               <button
                 className="chip"
