@@ -157,6 +157,98 @@ export default function App() {
     window.addEventListener('pointerup', onPointerUp);
   }, [boxWidth, boxHeight]);
 
+  // Info Box Size Customization (persisted in localStorage)
+  const [infoWidth, setInfoWidth] = useState(() => {
+    try {
+      const saved = localStorage.getItem('sim_info_box_width');
+      return saved ? Math.max(280, Math.min(850, parseInt(saved, 10))) : 420;
+    } catch {
+      return 420;
+    }
+  });
+  const [infoHeight, setInfoHeight] = useState(() => {
+    try {
+      const saved = localStorage.getItem('sim_info_box_height');
+      return saved ? Math.max(200, Math.min(1200, parseInt(saved, 10))) : null;
+    } catch {
+      return null;
+    }
+  });
+  const [infoScale, setInfoScale] = useState(() => {
+    try {
+      const saved = localStorage.getItem('sim_info_box_scale');
+      return saved ? Math.max(0.75, Math.min(1.3, parseFloat(saved))) : 1;
+    } catch {
+      return 1;
+    }
+  });
+  const [showInfoSizeSlider, setShowInfoSizeSlider] = useState(false);
+  const infoCardRef = useRef(null);
+
+  const handleInfoWidthChange = useCallback((val) => {
+    const clamped = Math.max(280, Math.min(850, val));
+    setInfoWidth(clamped);
+    try { localStorage.setItem('sim_info_box_width', String(clamped)); } catch {}
+  }, []);
+
+  const handleInfoScaleChange = useCallback((val) => {
+    const clamped = Math.max(0.75, Math.min(1.3, val));
+    setInfoScale(clamped);
+    try { localStorage.setItem('sim_info_box_scale', String(clamped)); } catch {}
+  }, []);
+
+  const setInfoPreset = useCallback((preset) => {
+    let w = 420;
+    if (preset === 'S') w = 350;
+    else if (preset === 'M') w = 420;
+    else if (preset === 'L') w = 540;
+    else if (preset === 'XL') w = 680;
+    setInfoWidth(w);
+    try { localStorage.setItem('sim_info_box_width', String(w)); } catch {}
+  }, []);
+
+  const handleResetInfoSize = useCallback(() => {
+    setInfoWidth(420);
+    setInfoHeight(null);
+    setInfoScale(1);
+    try {
+      localStorage.removeItem('sim_info_box_width');
+      localStorage.removeItem('sim_info_box_height');
+      localStorage.removeItem('sim_info_box_scale');
+    } catch {}
+  }, []);
+
+  const handleInfoResizeStart = useCallback((type) => (e) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const startW = infoWidth;
+    const startH = infoHeight || infoCardRef.current?.offsetHeight || 500;
+
+    const onPointerMove = (moveEvent) => {
+      if (type === 'right' || type === 'corner') {
+        const dx = moveEvent.clientX - startX;
+        const newW = Math.max(280, Math.min(Math.min(850, window.innerWidth - 40), startW + dx));
+        setInfoWidth(Math.round(newW));
+        try { localStorage.setItem('sim_info_box_width', String(Math.round(newW))); } catch {}
+      }
+      if (type === 'bottom' || type === 'corner') {
+        const dy = moveEvent.clientY - startY;
+        const newH = Math.max(220, Math.min(window.innerHeight - 80, startH + dy));
+        setInfoHeight(Math.round(newH));
+        try { localStorage.setItem('sim_info_box_height', String(Math.round(newH))); } catch {}
+      }
+    };
+
+    const onPointerUp = () => {
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onPointerUp);
+    };
+
+    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', onPointerUp);
+  }, [infoWidth, infoHeight]);
+
   // Initialize Backend WebSocket Bridge on port 8080
   useEffect(() => {
     backendBridge.init(8080);
@@ -632,11 +724,36 @@ export default function App() {
 
       <header className={`top${is3D ? '' : ' mode-2d'}`}>
         <section
+          ref={infoCardRef}
           className={`card info${infoOpen ? '' : ' collapsed'}`}
           id="info"
           hidden={!is3D}
           aria-live="polite"
+          style={{
+            width: `${infoWidth}px`,
+            maxWidth: 'calc(100vw - 2.5rem)',
+            maxHeight: infoHeight ? `${infoHeight}px` : 'calc(100vh - 110px)',
+            transform: infoScale !== 1 ? `scale(${infoScale})` : undefined,
+            transformOrigin: 'top left',
+          }}
         >
+          {/* Interactive drag-to-resize handles */}
+          <div
+            className="controls-resize-handle right"
+            onPointerDown={handleInfoResizeStart('right')}
+            title="Drag right/left to resize info box width"
+          />
+          <div
+            className="controls-resize-handle bottom"
+            onPointerDown={handleInfoResizeStart('bottom')}
+            title="Drag down/up to resize info box height"
+          />
+          <div
+            className="controls-resize-handle corner-br"
+            onPointerDown={handleInfoResizeStart('corner')}
+            title="Drag corner to resize info box width & height"
+          />
+
           <div className="card-head">
             <span className="mode-icon" id="mIcon" aria-hidden="true">
               {currentMode.icon}
@@ -658,6 +775,91 @@ export default function App() {
               {infoOpen ? 'Less' : 'More'}
             </button>
           </div>
+
+          {/* Box Size Customizer Toolbar */}
+          <div className="box-size-bar info-size-bar">
+            <div className="box-size-label">
+              <span className="box-size-icon" aria-hidden="true">📐</span>
+              <span>Box: <b>{infoWidth}px</b>{infoScale !== 1 ? ` (${(infoScale * 100).toFixed(0)}%)` : ''}</span>
+            </div>
+            <div className="box-size-presets" role="group" aria-label="Info box size presets">
+              <button
+                type="button"
+                className={`size-chip ${infoWidth <= 360 ? 'active' : ''}`}
+                title="Compact (350px)"
+                onClick={() => setInfoPreset('S')}
+              >
+                S
+              </button>
+              <button
+                type="button"
+                className={`size-chip ${infoWidth > 360 && infoWidth <= 450 ? 'active' : ''}`}
+                title="Standard (420px)"
+                onClick={() => setInfoPreset('M')}
+              >
+                M
+              </button>
+              <button
+                type="button"
+                className={`size-chip ${infoWidth > 450 && infoWidth <= 580 ? 'active' : ''}`}
+                title="Wide (540px - prevents table scroll)"
+                onClick={() => setInfoPreset('L')}
+              >
+                L
+              </button>
+              <button
+                type="button"
+                className={`size-chip ${infoWidth > 580 ? 'active' : ''}`}
+                title="Extra Wide (680px)"
+                onClick={() => setInfoPreset('XL')}
+              >
+                XL
+              </button>
+              <button
+                type="button"
+                className={`size-chip ${showInfoSizeSlider ? 'active' : ''}`}
+                title="Custom Width & Scale Settings"
+                onClick={() => setShowInfoSizeSlider(s => !s)}
+              >
+                ⚙️
+              </button>
+              <button
+                type="button"
+                className="size-chip"
+                title="Reset Info Box to Default (420px / 100%)"
+                onClick={handleResetInfoSize}
+              >
+                ↺
+              </button>
+            </div>
+          </div>
+
+          {showInfoSizeSlider && (
+            <div className="box-size-custom-panel">
+              <label className="range box-size-range">
+                <span>Width: <b>{infoWidth}px</b></span>
+                <input
+                  type="range"
+                  min="300"
+                  max="800"
+                  step="10"
+                  value={infoWidth}
+                  onChange={e => handleInfoWidthChange(Number(e.target.value))}
+                />
+              </label>
+              <label className="range box-size-range">
+                <span>Scale: <b>{(infoScale * 100).toFixed(0)}%</b></span>
+                <input
+                  type="range"
+                  min="0.80"
+                  max="1.25"
+                  step="0.05"
+                  value={infoScale}
+                  onChange={e => handleInfoScaleChange(Number(e.target.value))}
+                />
+              </label>
+            </div>
+          )}
           <div className="card-body" id="infoBody">
             <p id="mDesc">{currentMode.desc}</p>
             <p className="tip">
