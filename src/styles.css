@@ -151,3 +151,59 @@ h1{font:700 21px/1.1 'Barlow Condensed',sans-serif;letter-spacing:.01em}
   .hint{display:none}
   .dock{bottom:10px}
 }
+
+/* UAV-X Autonomous Swarm Cockpit & Telemetry HUD */
+.backend-status-pill{font:600 11.5px/1 'IBM Plex Mono',monospace;display:inline-flex;align-items:center;gap:6px;padding:6px 9px;border-radius:7px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.14);cursor:pointer;white-space:nowrap}
+.backend-status-pill.online{background:rgba(34,197,94,.16);border-color:rgba(34,197,94,.45);color:#4ade80}
+.backend-status-pill.offline{background:rgba(239,68,68,.16);border-color:rgba(239,68,68,.45);color:#f87171}
+.live-pulse-dot{width:8px;height:8px;border-radius:50%;background:currentColor;display:inline-block;animation:pulseDot 1.4s infinite}
+@keyframes pulseDot{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(.75)}}
+
+.sitl-badge{font:600 11px/1 'IBM Plex Mono',monospace;background:rgba(168,85,247,.16);border:1px solid rgba(168,85,247,.4);color:#c084fc;padding:6px 8px;border-radius:7px;white-space:nowrap}
+
+.layer-toggle-bar{display:flex;flex-wrap:wrap;gap:4px;padding:4px 0;border-top:1px solid var(--border)}
+.layer-btn{font-size:10.5px !important;padding:3px 7px !important;min-height:24px !important;border-radius:5px !important}
+.layer-btn[aria-pressed="true"]{background:rgba(56,189,248,.25) !important;border-color:rgba(56,189,248,.6) !important;color:#fff !important}
+
+.swarm-subsystems-panel{margin-top:8px;border-top:1px solid var(--border);padding-top:8px;display:grid;gap:8px}
+.swarm-tabs-bar{display:flex;gap:4px;background:rgba(0,0,0,.25);padding:3px;border-radius:8px;overflow-x:auto}
+.tab-btn{flex:1;background:transparent;border:0;color:var(--muted);font:600 11px 'Barlow',sans-serif;padding:5px 7px;border-radius:6px;cursor:pointer;white-space:nowrap;transition:all .15s}
+.tab-btn:hover{color:var(--text);background:rgba(255,255,255,.06)}
+.tab-btn.active{background:rgba(255,255,255,.14);color:#fff;box-shadow:0 2px 6px rgba(0,0,0,.2)}
+
+.fleet-table-wrap{overflow-x:auto;max-height:210px;scrollbar-width:thin}
+.fleet-table{width:100%;border-collapse:collapse;font-size:11px;font-family:'IBM Plex Mono',monospace;text-align:left}
+.fleet-table th{color:#94a3b8;font-size:10px;padding:4px 6px;border-bottom:1px solid rgba(255,255,255,.12);text-transform:uppercase}
+.fleet-table td{padding:5px 6px;border-bottom:1px solid rgba(255,255,255,.05);white-space:nowrap}
+.fleet-table tr:hover td{background:rgba(255,255,255,.04)}
+
+.fsm-tag{font:700 9.5px/1 'IBM Plex Mono',monospace;padding:2px 5px;border-radius:4px;display:inline-block}
+.fsm-SURV{background:rgba(34,197,94,.2);color:#86efac;border:1px solid rgba(34,197,94,.4)}
+.fsm-RELA{background:rgba(234,179,8,.2);color:#fde047;border:1px solid rgba(234,179,8,.4)}
+.fsm-TRAN{background:rgba(6,182,212,.2);color:#67e8f9;border:1px solid rgba(6,182,212,.4)}
+.fsm-TAKE{background:rgba(59,130,246,.2);color:#93c5fd;border:1px solid rgba(59,130,246,.4)}
+.fsm-RTL{background:rgba(249,115,22,.2);color:#fdba74;border:1px solid rgba(249,115,22,.4)}
+
+.tier-tag-pill{font:700 9.5px/1 'IBM Plex Mono',monospace;padding:2px 5px;border-radius:4px;display:inline-block}
+.tier-TIER_1{background:rgba(56,189,248,.18);color:#7dd3fc}
+.tier-TIER_2{background:rgba(34,197,94,.18);color:#86efac}
+.tier-TIER_3{background:rgba(6,182,212,.18);color:#67e8f9}
+.tier-TIER_4{background:rgba(168,85,247,.18);color:#d8b4fe}
+
+.bat-bar-wrap{display:flex;align-items:center;gap:5px}
+.bat-track{width:42px;height:5px;background:rgba(255,255,255,.1);border-radius:3px;overflow:hidden}
+.bat-fill{height:100%;border-radius:3px}
+
+.entropy-box{background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:8px;padding:8px 10px;display:grid;gap:6px}
+.entropy-head{display:flex;justify-content:space-between;align-items:center;font-size:11.5px}
+.entropy-track{width:100%;height:8px;background:rgba(255,255,255,.1);border-radius:4px;overflow:hidden}
+.entropy-fill{height:100%;background:linear-gradient(90deg,#06b6d4,#22c55e);transition:width .3s ease}
+
+.flir-survivor-item{display:flex;justify-content:space-between;align-items:center;padding:5px 8px;background:rgba(255,0,85,.1);border:1px solid rgba(255,0,85,.3);border-radius:6px;font-size:11.5px}
+.flir-badge-pill{font:700 10px 'IBM Plex Mono',monospace;background:rgba(255,0,85,.25);color:#ff4d79;padding:2px 6px;border-radius:4px;border:1px solid rgba(255,0,85,.5)}
+
+.hazard-badge-pill{font:700 10px 'IBM Plex Mono',monospace;padding:2px 6px;border-radius:4px}
+.hazard-FIRE{background:rgba(239,68,68,.25);color:#fca5a5;border:1px solid rgba(239,68,68,.5)}
+.hazard-GAS,.hazard-PLUM{background:rgba(234,179,8,.25);color:#fde047;border:1px solid rgba(234,179,8,.5)}
+.hazard-ROAD{background:rgba(249,115,22,.25);color:#fdba74;border:1px solid rgba(249,115,22,.5)}
+

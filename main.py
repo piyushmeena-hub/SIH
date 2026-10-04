@@ -445,27 +445,37 @@ class SwarmSimulationEngine:
 
         # Deduplicated targets (compact top sightings)
         survivors_data = []
-        for s in self.dedup_engine.get_canonical_survivors()[:3]:
+        for s in self.dedup_engine.get_canonical_survivors()[:4]:
             survivors_data.append({
                 "id": s.marker_id,
                 "pos": [round(float(v), 1) for v in s.canonical_pos],
                 "conf": round(s.confidence, 2),
                 "life": bool(s.metadata.get("life_verified", False)),
+                "temp": round(float(s.metadata.get("peak_temp_c", 36.8)), 1),
             })
 
         hazards_data = []
-        for h in self.dedup_engine.get_canonical_hazards()[:3]:
+        for h in self.dedup_engine.get_canonical_hazards()[:4]:
             hazards_data.append({
                 "id": h.marker_id,
                 "type": h.entity_type[:4],
                 "pos": [round(float(v), 1) for v in h.canonical_pos],
                 "conf": round(h.confidence, 2),
+                "sev": h.metadata.get("severity", "HIGH")[:4],
             })
+
+        # Compact active FANET links (node_a, node_b, band, snr_db)
+        links_data = []
+        for (u1, u2), lq in self.last_active_links.items():
+            if u1 < u2 or u2 == 0:
+                band_str = "2.4G" if lq.band.name == "BAND_2_4_GHZ" else "LORA"
+                links_data.append([u1, u2, band_str, round(float(lq.snr_db), 1)])
 
         frame = {
             "t": round(self.sim_time, 2),
             "seq": self.frame_seq,
             "drones": drones_data,
+            "links": links_data[:8],
             "entropy": entropy_data,
             "net": net_data,
             "survivors": survivors_data,
@@ -474,8 +484,9 @@ class SwarmSimulationEngine:
         res = json.dumps(frame, separators=(",", ":"))
         # Strict hard guarantee: must stay under 1536 bytes (< 1.5 KB)
         if len(res.encode("utf-8")) > 1500:
-            frame["survivors"] = frame["survivors"][:1]
-            frame["hazards"] = frame["hazards"][:1]
+            frame["survivors"] = frame["survivors"][:2]
+            frame["hazards"] = frame["hazards"][:2]
+            frame["links"] = frame["links"][:4]
             res = json.dumps(frame, separators=(",", ":"))
         return res
 
@@ -570,13 +581,49 @@ def get_hazards():
     ]
 
 
+@app.get("/api/octomap_voxels")
+def get_octomap_voxels():
+    """Returns downsampled coordinates of confirmed occupied rubble voxels."""
+    if not sim_engine:
+        return {"voxels": [], "res": 1.0, "total": 0}
+    pts = sim_engine.octomap.get_occupied_points()
+    total = len(pts)
+    if total > 500:
+        step = max(1, total // 500)
+        pts = pts[::step]
+    return {
+        "voxels": [[round(float(c), 1) for c in pt] for pt in pts],
+        "res": sim_engine.octomap.res,
+        "total": total,
+        "entropy": asdict(sim_engine.last_entropy_metrics) if sim_engine.last_entropy_metrics else None,
+    }
+
+
 @app.post("/api/command")
 def post_command(cmd: dict):
-    """Dispatches command to swarm UAV."""
+    """Dispatches command to swarm UAV(s)."""
     if not sim_engine:
         return {"success": False, "error": "Engine not running"}
-    drone_id = cmd.get("drone_id", 1)
+    drone_id = cmd.get("drone_id", None)
     action = cmd.get("action", "").upper()
+
+    # Swarm-wide commands
+    if action in ("TAKEOFF_ALL", "RTL_ALL", "ARM_ALL", "DISARM_ALL", "SURVEY_ALL"):
+        for uav_id, uav in sim_engine.drones.items():
+            if action == "TAKEOFF_ALL":
+                uav.armed = True
+                uav.mode = "TAKEOFF"
+                uav.target_pos[2] = 20.0
+            elif action == "RTL_ALL":
+                uav.mode = "RTL"
+                uav.target_pos = np.array([uav.kinematics.home_pos[0], uav.kinematics.home_pos[1], 12.0])
+            elif action == "ARM_ALL":
+                uav.armed = True
+            elif action == "DISARM_ALL":
+                uav.armed = False
+            elif action == "SURVEY_ALL":
+                uav.mode = "SURVEYING"
+        return {"success": True, "action": action, "drones_affected": len(sim_engine.drones)}
 
     if drone_id in sim_engine.drones:
         uav = sim_engine.drones[drone_id]
@@ -586,7 +633,11 @@ def post_command(cmd: dict):
             uav.armed = False
         elif action == "TAKEOFF":
             uav.armed = True
-            uav.target_pos[2] = cmd.get("altitude", 15.0)
+            uav.mode = "TAKEOFF"
+            uav.target_pos[2] = cmd.get("altitude", 20.0)
+        elif action == "RTL":
+            uav.mode = "RTL"
+            uav.target_pos = np.array([uav.kinematics.home_pos[0], uav.kinematics.home_pos[1], 12.0])
         elif action == "GOTO":
             if "pos" in cmd:
                 uav.target_pos = np.array(cmd["pos"], dtype=np.float64)

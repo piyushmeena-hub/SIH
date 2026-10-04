@@ -192,7 +192,16 @@ export function createDisasterEngine(canvas, { onStatsUpdate, onEarthquakeUpdate
     hitSphere: new THREE.SphereGeometry(3.2, 8, 8),
     zoneCyl: new THREE.CylinderGeometry(1, 1, 14, 28, 1, true),
     zoneRing: new THREE.RingGeometry(0.94, 1.0, 32),
-    beamCyl: new THREE.CylinderGeometry(0.18, 0.55, 1, 10, 1, true)
+    beamCyl: new THREE.CylinderGeometry(0.18, 0.55, 1, 10, 1, true),
+    apfSphere: new THREE.SphereGeometry(1.5, 14, 10),
+    apfRing: new THREE.RingGeometry(2.8, 3.0, 28),
+    downwashCone: new THREE.CylinderGeometry(0.7, 3.2, 9.0, 16, 1, true),
+    tierHalo: new THREE.RingGeometry(1.85, 2.2, 24),
+    lidarCone: new THREE.ConeGeometry(7.0, 14.0, 16, 1, true),
+    octoBox: new THREE.BoxGeometry(1.0, 1.0, 1.0),
+    packetSphere: new THREE.SphereGeometry(0.35, 8, 8),
+    hazardPyramid: new THREE.ConeGeometry(2.4, 4.8, 4),
+    gasCloud: new THREE.SphereGeometry(3.5, 12, 10)
   };
   Object.values(G).forEach(g => shared.add(g));
 
@@ -2086,11 +2095,35 @@ export function createDisasterEngine(canvas, { onStatsUpdate, onEarthquakeUpdate
     selBeam: new THREE.MeshBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.28, side: THREE.DoubleSide, depthWrite: false }),
     linkOk: new THREE.LineBasicMaterial({ color: 0x8fd960, transparent: true, opacity: 0.9 }),
     linkDegraded: new THREE.LineBasicMaterial({ color: 0xe0a63c, transparent: true, opacity: 0.85 }),
-    linkLost: new THREE.LineBasicMaterial({ color: 0xe06050, transparent: true, opacity: 0.75 })
+    linkLost: new THREE.LineBasicMaterial({ color: 0xe06050, transparent: true, opacity: 0.75 }),
+
+    // Khatib APF Collision Avoidance & Downwash
+    apfSafetyOk: new THREE.MeshBasicMaterial({ color: 0x38bdf8, wireframe: true, transparent: true, opacity: 0.28 }),
+    apfSafetyWarn: new THREE.MeshBasicMaterial({ color: 0xef4444, wireframe: true, transparent: true, opacity: 0.7 }),
+    apfFieldOk: new THREE.MeshBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.16, side: THREE.DoubleSide }),
+    apfFieldWarn: new THREE.MeshBasicMaterial({ color: 0xf59e0b, transparent: true, opacity: 0.35, side: THREE.DoubleSide }),
+    downwashMat: new THREE.MeshBasicMaterial({ color: 0x06b6d4, transparent: true, opacity: 0.14, side: THREE.DoubleSide, depthWrite: false }),
+
+    // Dual-Band FANET Links & Telemetry Packets
+    link24G: new THREE.LineBasicMaterial({ color: 0x00f0ff, transparent: true, opacity: 0.95 }),
+    linkLora: new THREE.LineBasicMaterial({ color: 0xf59e0b, transparent: true, opacity: 0.95 }),
+    packetPulseMat: new THREE.MeshBasicMaterial({ color: 0xffffff }),
+
+    // AI Vision FLIR Thermal & OpenCV Hazards
+    flirVitalSign: M(0xff0055, { emissive: 0xff0044, emissiveIntensity: 1.8, side: THREE.DoubleSide }),
+    hazardFire: M(0xff4500, { emissive: 0xff2200, emissiveIntensity: 2.0 }),
+    hazardGas: new THREE.MeshBasicMaterial({ color: 0xeab308, transparent: true, opacity: 0.35, depthWrite: false }),
+    hazardRoad: M(0xf59e0b, { emissive: 0xd97706, emissiveIntensity: 1.4 }),
+
+    // OctoMap 3D Rubble Voxels
+    octoRubble: new THREE.MeshStandardMaterial({ color: 0xd97706, roughness: 0.75, metalness: 0.2, transparent: true, opacity: 0.72 })
   };
   [
     ROLE_MATS.jammerFill, ROLE_MATS.jammerEdge, ROLE_MATS.gpsFill, ROLE_MATS.gpsEdge,
-    ROLE_MATS.selBeam, ROLE_MATS.linkOk, ROLE_MATS.linkDegraded, ROLE_MATS.linkLost
+    ROLE_MATS.selBeam, ROLE_MATS.linkOk, ROLE_MATS.linkDegraded, ROLE_MATS.linkLost,
+    ROLE_MATS.apfSafetyOk, ROLE_MATS.apfSafetyWarn, ROLE_MATS.apfFieldOk, ROLE_MATS.apfFieldWarn,
+    ROLE_MATS.downwashMat, ROLE_MATS.link24G, ROLE_MATS.linkLora, ROLE_MATS.packetPulseMat,
+    ROLE_MATS.flirVitalSign, ROLE_MATS.hazardFire, ROLE_MATS.hazardGas, ROLE_MATS.hazardRoad, ROLE_MATS.octoRubble
   ].forEach(m => shared.add(m));
 
   function getRoleMat(role, mode) {
@@ -2121,6 +2154,34 @@ export function createDisasterEngine(canvas, { onStatsUpdate, onEarthquakeUpdate
     gcsGroup.userData = { beacon, ring };
     swarmGroup.add(gcsGroup);
   }
+
+  // Layer visibility toggles
+  let showApfBubbles = true;
+  let showFanetLinks = true;
+  let showOctomapVoxels = true;
+  let showAiDetections = true;
+
+  // 1. OctoMap 3D Rubble Voxels (InstancedMesh for high performance)
+  const MAX_OCTO_VOXELS = 600;
+  const octoInstanced = new THREE.InstancedMesh(G.octoBox, ROLE_MATS.octoRubble, MAX_OCTO_VOXELS);
+  octoInstanced.count = 0;
+  octoInstanced.frustumCulled = false;
+  swarmGroup.add(octoInstanced);
+
+  // 3. Telemetry packet pulse particles along FANET links
+  const packetMeshes = [];
+  const MAX_PACKETS = 16;
+  for (let i = 0; i < MAX_PACKETS; i++) {
+    const pm = new THREE.Mesh(G.packetSphere, ROLE_MATS.packetPulseMat);
+    pm.visible = false;
+    swarmGroup.add(pm);
+    packetMeshes.push(pm);
+  }
+
+  // 4. OpenCV Tagged Hazard Group (Fire, Gas, Blocked Roads)
+  const hazardGroup = new THREE.Group();
+  swarmGroup.add(hazardGroup);
+  const hazardMeshes = new Map();
 
   const droneMeshes = new Map();
   const poiMeshes = new Map();
@@ -2178,12 +2239,33 @@ export function createDisasterEngine(canvas, { onStatsUpdate, onEarthquakeUpdate
     selBeam.scale.set(1, 12, 1);
     selBeam.visible = false;
 
+    // Khatib APF Collision Avoidance: 1.5m Hard Safety Clearance Sphere
+    const apfSphere = new THREE.Mesh(G.apfSphere, ROLE_MATS.apfSafetyOk);
+    apfSphere.visible = showApfBubbles;
+
+    // Khatib APF Repulsive Potential Field Ring: 3.0m
+    const apfRing = new THREE.Mesh(G.apfRing, ROLE_MATS.apfFieldOk);
+    apfRing.rotation.x = -Math.PI / 2;
+    apfRing.position.y = -0.05;
+    apfRing.visible = showApfBubbles;
+
+    // Downwash Vortex Ring State Avoidance Cone underneath drone
+    const downwashCone = new THREE.Mesh(G.downwashCone, ROLE_MATS.downwashMat);
+    downwashCone.position.y = -4.5;
+    downwashCone.visible = showApfBubbles;
+
+    // 3D Synthetic LiDAR Scanning Fan Cone
+    const lidarFan = new THREE.Mesh(G.lidarCone, ROLE_MATS.downwashMat);
+    lidarFan.position.y = -7.0;
+    lidarFan.rotation.x = Math.PI;
+    lidarFan.visible = false;
+
     const hitMesh = new THREE.Mesh(G.hitSphere, VMAT.hitInvisible);
     hitMesh.userData = { pickType: 'drone', droneId: id };
 
-    g.add(beacon, roleRing, selRing, selBeam, hitMesh);
+    g.add(beacon, roleRing, selRing, selBeam, apfSphere, apfRing, downwashCone, lidarFan, hitMesh);
     swarmGroup.add(g);
-    const item = { id, g, rotors, beacon, roleRing, selRing, selBeam, hitMesh };
+    const item = { id, g, rotors, beacon, roleRing, selRing, selBeam, apfSphere, apfRing, downwashCone, lidarFan, hitMesh };
     droneMeshes.set(id, item);
     return item;
   }
@@ -2241,17 +2323,48 @@ export function createDisasterEngine(canvas, { onStatsUpdate, onEarthquakeUpdate
       const flyY = isGround ? groundY + 0.55 : Math.max(groundY + 9, d.position.y);
       dm.g.position.set(gx, flyY, gz);
 
+      // 6-DOF kinematics tilt and rotor spinning
       if (d.mode === 'dead') {
         dm.g.rotation.set(0.45, 0, 0.55);
       } else {
-        dm.g.rotation.x = 0;
-        dm.g.rotation.z = 0;
-        if (Math.hypot(d.velocity.vx, d.velocity.vy) > 0.2) {
-          dm.g.rotation.y = -Math.atan2(d.velocity.vy, d.velocity.vx);
+        if (d.attitude) {
+          dm.g.rotation.x = d.attitude.pitch || 0;
+          dm.g.rotation.z = d.attitude.roll || 0;
+          if (d.attitude.yaw) dm.g.rotation.y = d.attitude.yaw;
+        } else {
+          dm.g.rotation.x = 0;
+          dm.g.rotation.z = 0;
+          if (Math.hypot(d.velocity.vx, d.velocity.vy) > 0.2) {
+            dm.g.rotation.y = -Math.atan2(d.velocity.vy, d.velocity.vx);
+          }
         }
         for (let r = 0; r < dm.rotors.length; r++) {
           dm.rotors[r].rotation.y += dt * (d.mode === 'landed' ? 2 : 34);
         }
+      }
+
+      // Check peer distance for Khatib APF repulsive collision avoidance
+      let minPeerDist = 999;
+      for (const other of st.drones) {
+        if (other.id !== d.id && other.status !== 'dead') {
+          const dist = Math.hypot(gx - other.position.x, gz - other.position.z, flyY - other.position.y);
+          if (dist < minPeerDist) minPeerDist = dist;
+        }
+      }
+      const apfActive = minPeerDist < 3.0;
+      dm.apfSphere.material = apfActive ? ROLE_MATS.apfSafetyWarn : ROLE_MATS.apfSafetyOk;
+      dm.apfRing.material = apfActive ? ROLE_MATS.apfFieldWarn : ROLE_MATS.apfFieldOk;
+      dm.apfRing.scale.setScalar(apfActive ? 1.0 + Math.sin(t * 8) * 0.12 : 1.0);
+      dm.apfSphere.visible = showApfBubbles && !isGround;
+      dm.apfRing.visible = showApfBubbles && !isGround;
+      dm.downwashCone.visible = showApfBubbles && !isGround;
+      dm.downwashCone.rotation.y += dt * 1.5;
+
+      // 3D Synthetic LiDAR Scanning Fan Cone
+      dm.lidarFan.visible = (d.fsm === 'SURV' || d.mode === 'surveying' || d.role === 'mission') && !isGround;
+      if (dm.lidarFan.visible) {
+        dm.lidarFan.rotation.y += dt * 3.5;
+        dm.lidarFan.scale.set(1 + Math.sin(t * 5) * 0.08, 1, 1 + Math.sin(t * 5) * 0.08);
       }
 
       const rMat = getRoleMat(d.role, d.mode);
@@ -2302,11 +2415,11 @@ export function createDisasterEngine(canvas, { onStatsUpdate, onEarthquakeUpdate
       if (!activePoiIds.has(id)) pm.g.visible = false;
     }
 
-    // 4. Update RF Network Links
+    // 4. Update Dual-Band RF Network Links
     const links = (st.network && st.network.links) ? st.network.links : [];
     for (let i = 0; i < MAX_LINKS; i++) {
       const line = linkLines[i];
-      if (i >= links.length) {
+      if (i >= links.length || !showFanetLinks) {
         line.visible = false;
         continue;
       }
@@ -2323,11 +2436,35 @@ export function createDisasterEngine(canvas, { onStatsUpdate, onEarthquakeUpdate
       arr[4] = by;
       arr[5] = lk.to3D.z;
       posAttr.needsUpdate = true;
-      line.material = lk.state === 'ok'
-        ? ROLE_MATS.linkOk
-        : lk.state === 'degraded'
-          ? ROLE_MATS.linkDegraded
-          : ROLE_MATS.linkLost;
+      line.material = lk.band === 'LORA'
+        ? ROLE_MATS.linkLora
+        : lk.state === 'ok'
+          ? ROLE_MATS.link24G
+          : lk.state === 'degraded'
+            ? ROLE_MATS.linkDegraded
+            : ROLE_MATS.linkLost;
+    }
+
+    // Animate telemetry packet transmission pulses along links
+    for (let p = 0; p < packetMeshes.length; p++) {
+      const pm = packetMeshes[p];
+      if (p >= links.length || !showFanetLinks) {
+        pm.visible = false;
+        continue;
+      }
+      const lk = links[p];
+      pm.visible = true;
+      const progress = ((t * 2.2 + p * 0.28) % 1.0);
+      const lfrom = lk.from3D;
+      const lto = lk.to3D;
+      const ay = Math.max(H(lfrom.x, lfrom.z) + 4.5, lfrom.y);
+      const by = Math.max(H(lto.x, lto.z) + 4.5, lto.y);
+      pm.position.set(
+        lfrom.x + (lto.x - lfrom.x) * progress,
+        ay + (by - ay) * progress,
+        lfrom.z + (lto.z - lfrom.z) * progress
+      );
+      pm.material = lk.band === 'LORA' ? ROLE_MATS.linkLora : ROLE_MATS.link24G;
     }
 
     // 5. Update RF Jammers & GPS Denied Zones in 3D
@@ -2391,6 +2528,83 @@ export function createDisasterEngine(canvas, { onStatsUpdate, onEarthquakeUpdate
       gm.cyl.scale.set(r, 1, r);
       gm.ring.scale.set(r, r, 1);
       gm.emitter.rotation.y -= dt * 2.2;
+    }
+
+    // 6. Update Survivors with FLIR Thermal Life Sign Verification
+    for (const v of victimList) {
+      const match = st.survivors.find(s => s.id === v.id || (Math.hypot(s.position.x - v.g.position.x, s.position.z - v.g.position.z) < 8));
+      if (match && match.detected) {
+        if (match.lifeVerified) {
+          v.beacon.material = ROLE_MATS.flirVitalSign;
+          v.ring.material = ROLE_MATS.flirVitalSign;
+          const pulse = 1.0 + Math.sin(t * 7) * 0.35; // Heartbeat vital pulse
+          v.beacon.scale.setScalar(pulse * 1.25);
+          v.ring.scale.setScalar(pulse * 1.6);
+        } else {
+          v.beacon.material = ROLE_MATS.poiSurveying;
+        }
+      }
+    }
+
+    // 7. Update OpenCV Tagged Hazards (Fire, Gas, Blocked Roads)
+    const hazards = (st.hazards && st.hazards.taggedHazards) ? st.hazards.taggedHazards : [];
+    const activeHazardIds = new Set();
+    for (const hz of hazards) {
+      activeHazardIds.add(hz.id);
+      let hm = hazardMeshes.get(hz.id);
+      if (!hm) {
+        const g = new THREE.Group();
+        const cone = new THREE.Mesh(G.hazardPyramid, ROLE_MATS.hazardFire);
+        cone.position.y = 2.4;
+        const ring = new THREE.Mesh(G.zoneRing, ROLE_MATS.hazardFire);
+        ring.rotation.x = -Math.PI / 2;
+        ring.position.y = 0.2;
+        ring.scale.set(6, 6, 1);
+        g.add(cone, ring);
+        hazardGroup.add(g);
+        hm = { g, cone, ring, type: hz.type };
+        hazardMeshes.set(hz.id, hm);
+      }
+      hm.g.visible = showAiDetections;
+      const hx = hz.position3D.x;
+      const hzCoord = hz.position3D.z;
+      const hy = H(hx, hzCoord);
+      hm.g.position.set(hx, hy, hzCoord);
+      hm.cone.rotation.y += dt * 2.0;
+
+      if (hz.type === 'FIRE') {
+        hm.cone.material = ROLE_MATS.hazardFire;
+        hm.cone.scale.set(1 + Math.sin(t * 9) * 0.15, 1 + Math.sin(t * 11) * 0.2, 1 + Math.sin(t * 9) * 0.15);
+      } else if (hz.type === 'GAS' || hz.type === 'PLUM') {
+        hm.cone.material = ROLE_MATS.hazardGas;
+        hm.cone.scale.set(1.4 + Math.sin(t * 2) * 0.2, 1.2, 1.4 + Math.sin(t * 2) * 0.2);
+      } else {
+        hm.cone.material = ROLE_MATS.hazardRoad;
+      }
+    }
+    for (const [id, hm] of hazardMeshes.entries()) {
+      if (!activeHazardIds.has(id)) hm.g.visible = false;
+    }
+
+    // 8. Update OctoMap 3D Rubble Voxels from LiDAR Scanning
+    const voxels = (st.octomap && st.octomap.voxels) ? st.octomap.voxels : [];
+    const vCount = Math.min(voxels.length, MAX_OCTO_VOXELS);
+    octoInstanced.count = vCount;
+    octoInstanced.visible = showOctomapVoxels && vCount > 0;
+    if (octoInstanced.visible) {
+      const dummy = new THREE.Object3D();
+      for (let i = 0; i < vCount; i++) {
+        const v = voxels[i];
+        const vx = v[0];
+        const vz = v[1];
+        const vy = v[2];
+        const gy = H(vx, vz);
+        dummy.position.set(vx, gy + vy, vz);
+        dummy.scale.set(0.95, 0.95, 0.95);
+        dummy.updateMatrix();
+        octoInstanced.setMatrixAt(i, dummy.matrix);
+      }
+      octoInstanced.instanceMatrix.needsUpdate = true;
     }
   }
 
@@ -2859,6 +3073,28 @@ export function createDisasterEngine(canvas, { onStatsUpdate, onEarthquakeUpdate
     },
     focusPosition,
     resetView,
+    setCorridorsVisible(_visible) {},
+    setApfBubblesVisible(visible) {
+      showApfBubbles = Boolean(visible);
+      for (const dm of droneMeshes.values()) {
+        dm.apfSphere.visible = showApfBubbles;
+        dm.apfRing.visible = showApfBubbles;
+        dm.downwashCone.visible = showApfBubbles;
+      }
+    },
+    setFanetLinksVisible(visible) {
+      showFanetLinks = Boolean(visible);
+      for (const l of linkLines) l.visible = showFanetLinks;
+      for (const p of packetMeshes) p.visible = showFanetLinks;
+    },
+    setOctomapVisible(visible) {
+      showOctomapVoxels = Boolean(visible);
+      octoInstanced.visible = showOctomapVoxels;
+    },
+    setAiDetectionsVisible(visible) {
+      showAiDetections = Boolean(visible);
+      hazardGroup.visible = showAiDetections;
+    },
     dispose() {
       if (disposed) return;
       disposed = true;
