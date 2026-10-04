@@ -19,7 +19,7 @@ export const MODES_META = [
     id: 'earthquake',
     name: 'Earthquake',
     icon: '🏚️',
-    desc: 'Shaking arrives in waves. Look for tilted and collapsed buildings, open fissures, falling debris and dust. Unconscious survivors lie in the streets between the damaged buildings.',
+    desc: 'Single-burst seismic event. Trigger a 10-second earthquake to observe magnitude-scaled ground displacement, P/S wave harmonics, building oscillation, and debris shedding.',
     tip: 'Drop, cover and hold on until the shaking stops. Then move to open space away from buildings and power lines.'
   },
   {
@@ -66,7 +66,7 @@ export const MODES_META = [
   }
 ];
 
-export function createDisasterEngine(canvas, { onStatsUpdate } = {}) {
+export function createDisasterEngine(canvas, { onStatsUpdate, onEarthquakeUpdate } = {}) {
   const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   /* ---------- helpers ---------- */
@@ -239,6 +239,132 @@ export function createDisasterEngine(canvas, { onStatsUpdate } = {}) {
   })();
   shared.add(windowTex);
 
+  const crackedWindowTex = (() => {
+    const c = document.createElement('canvas');
+    c.width = c.height = 64;
+    const g = c.getContext('2d');
+    g.fillStyle = '#f2efe9';
+    g.fillRect(0, 0, 64, 64);
+    g.fillStyle = '#4b5a6c';
+    [[10, 12], [38, 12], [10, 40], [38, 40]].forEach(([x, y]) => g.fillRect(x, y, 16, 16));
+    g.fillStyle = 'rgba(255,255,255,.25)';
+    [[10, 12], [38, 12], [10, 40], [38, 40]].forEach(([x, y]) => g.fillRect(x, y, 6, 16));
+
+    // Hairline diagonal and branching fracture lines across facade & window panes
+    g.strokeStyle = '#2b2622';
+    g.lineWidth = 1.2;
+    g.lineCap = 'round';
+    g.beginPath();
+    g.moveTo(6, 2);
+    g.lineTo(14, 16);
+    g.lineTo(19, 23);
+    g.lineTo(12, 33);
+    g.lineTo(22, 45);
+    g.stroke();
+
+    g.beginPath();
+    g.moveTo(48, 6);
+    g.lineTo(43, 19);
+    g.lineTo(52, 28);
+    g.lineTo(39, 43);
+    g.lineTo(44, 58);
+    g.stroke();
+
+    // Subtle horizontal shear branch
+    g.strokeStyle = 'rgba(43,38,34,0.7)';
+    g.lineWidth = 0.8;
+    g.beginPath();
+    g.moveTo(19, 23);
+    g.lineTo(32, 26);
+    g.lineTo(43, 19);
+    g.stroke();
+
+    // Fractured glass highlights
+    g.strokeStyle = 'rgba(255,255,255,0.75)';
+    g.lineWidth = 0.7;
+    g.beginPath();
+    g.moveTo(12, 14); g.lineTo(24, 25);
+    g.moveTo(40, 42); g.lineTo(51, 52);
+    g.stroke();
+
+    const t = new THREE.CanvasTexture(c);
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    return t;
+  })();
+  shared.add(crackedWindowTex);
+
+  const damagedWindowTex = (() => {
+    const c = document.createElement('canvas');
+    c.width = c.height = 64;
+    const g = c.getContext('2d');
+    // Stained, distressed concrete base
+    g.fillStyle = '#d8d0c2';
+    g.fillRect(0, 0, 64, 64);
+
+    // Distress staining patches
+    g.fillStyle = 'rgba(75, 60, 45, 0.22)';
+    g.beginPath();
+    g.arc(20, 30, 18, 0, Math.PI * 2);
+    g.fill();
+    g.beginPath();
+    g.arc(46, 44, 16, 0, Math.PI * 2);
+    g.fill();
+
+    // Windows: shattered & blackened panes
+    g.fillStyle = '#343e4a';
+    g.fillRect(10, 12, 16, 16);
+    g.fillStyle = '#181b20';
+    g.fillRect(38, 12, 16, 16);
+    g.fillStyle = '#28323d';
+    g.fillRect(10, 40, 16, 16);
+    g.fillStyle = '#14161a';
+    g.fillRect(38, 40, 16, 16);
+
+    // Jagged glass remnants on shattered window
+    g.fillStyle = '#657a91';
+    g.beginPath();
+    g.moveTo(38, 12); g.lineTo(45, 12); g.lineTo(41, 18); g.closePath();
+    g.fill();
+    g.beginPath();
+    g.moveTo(54, 24); g.lineTo(54, 28); g.lineTo(48, 28); g.closePath();
+    g.fill();
+
+    // Heavy structural fracture lines (dark thick fissures)
+    g.strokeStyle = '#15120e';
+    g.lineWidth = 2.2;
+    g.lineCap = 'round';
+    g.beginPath();
+    g.moveTo(2, 8);
+    g.lineTo(16, 20);
+    g.lineTo(24, 18);
+    g.lineTo(34, 38);
+    g.lineTo(48, 44);
+    g.lineTo(60, 56);
+    g.stroke();
+
+    // Cross-shear fracture
+    g.lineWidth = 1.8;
+    g.beginPath();
+    g.moveTo(58, 4);
+    g.lineTo(44, 22);
+    g.lineTo(34, 38);
+    g.lineTo(18, 48);
+    g.lineTo(8, 62);
+    g.stroke();
+
+    // Concrete spall exposing darker aggregate core
+    g.fillStyle = '#856e5c';
+    g.fillRect(29, 33, 9, 9);
+    g.strokeStyle = '#382f27';
+    g.lineWidth = 1;
+    g.strokeRect(29, 33, 9, 9);
+
+    const t = new THREE.CanvasTexture(c);
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    return t;
+  })();
+  shared.add(damagedWindowTex);
+
   const bMatCache = new Map();
   function BM(hex) {
     if (!bMatCache.has(hex)) {
@@ -247,6 +373,27 @@ export function createDisasterEngine(canvas, { onStatsUpdate } = {}) {
       bMatCache.set(hex, m);
     }
     return bMatCache.get(hex);
+  }
+
+  const bMatCrackedCache = new Map();
+  function BM_Cracked(hex) {
+    if (!bMatCrackedCache.has(hex)) {
+      const m = new THREE.MeshStandardMaterial({ color: hex, map: crackedWindowTex, roughness: 0.92, flatShading: true });
+      shared.add(m);
+      bMatCrackedCache.set(hex, m);
+    }
+    return bMatCrackedCache.get(hex);
+  }
+
+  const bMatDamagedCache = new Map();
+  function BM_Damaged(hex) {
+    if (!bMatDamagedCache.has(hex)) {
+      const col = new THREE.Color(hex).multiplyScalar(0.88);
+      const m = new THREE.MeshStandardMaterial({ color: col, map: damagedWindowTex, roughness: 0.95, flatShading: true });
+      shared.add(m);
+      bMatDamagedCache.set(hex, m);
+    }
+    return bMatDamagedCache.get(hex);
   }
 
   function buildingGeo(w, h, d) {
@@ -517,26 +664,102 @@ export function createDisasterEngine(canvas, { onStatsUpdate } = {}) {
         const distNorm = Math.hypot(i - (grid - 1) / 2, j - (grid - 1) / 2) / (grid * 0.7);
         const w = R(5, 8.5), d = R(5, 8.5), h = R(4.5, 15.5) * (1.12 - distNorm * 0.24);
         const dmg = typeof o.damage === 'function' ? o.damage(x, z) : (o.damage || 0);
-        if (rand() < dmg * 0.3) {
+        if (dmg > 0 && rand() < dmg * 0.3) {
           rubble(x, z, w, d, level);
           buildings.push({ x, z, hw: w / 2, hd: d / 2, top: level + 1.5, rubble: true });
           continue;
         }
-        const mesh = new THREE.Mesh(buildingGeo(w, h, d), BM(pick(BCOL)));
+        const hex = pick(BCOL);
+        const intactMat = BM(hex);
+        const crackedMat = BM_Cracked(hex);
+        const damagedMat = BM_Damaged(hex);
+        const mesh = new THREE.Mesh(buildingGeo(w, h, d), intactMat);
         mesh.position.set(x, level + h / 2, z);
         mesh.castShadow = mesh.receiveShadow = true;
         const rh = o.snow ? 0.8 : 0.35;
-        const roof = new THREE.Mesh(G.box, M(o.snow ? 0xf4f7f9 : 0x4d4a48));
+        const roofMat = M(o.snow ? 0xf4f7f9 : 0x4d4a48);
+        const roof = new THREE.Mesh(G.box, roofMat);
         roof.scale.set(w + 0.4, rh, d + 0.4);
         roof.position.y = h / 2 + rh / 2;
         roof.castShadow = true;
         mesh.add(roof);
-        const b = { x, z, hw: w / 2, hd: d / 2, top: level + h + rh, mesh, roof, tz: 0 };
+
+        // Pre-create hidden rubble group for zero-allocation runtime collapse
+        const rubbleGroup = new THREE.Group();
+        rubbleGroup.position.set(x, level, z);
+        rubbleGroup.visible = false;
+
+        const rubbleBlocks = new THREE.InstancedMesh(G.box, M(0x8a8278), 14);
+        rubbleBlocks.castShadow = true;
+        for (let k = 0; k < 14; k++) {
+          _dummy.scale.set(R(0.8, Math.min(w * 0.55, 3.2)), R(0.4, 1.4), R(0.8, Math.min(d * 0.55, 3.2)));
+          _dummy.position.set(R(-w * 0.45, w * 0.45), R(0.2, 1.3), R(-d * 0.45, d * 0.45));
+          _dummy.rotation.set(R(-0.6, 0.6), R(0, 3.14), R(-0.6, 0.6));
+          _dummy.updateMatrix();
+          rubbleBlocks.setMatrixAt(k, _dummy.matrix);
+          _c2.set(pick([0x9b9389, 0x857c72, 0xb0a698, 0x6f6a64]));
+          rubbleBlocks.setColorAt(k, _c2);
+        }
+        rubbleBlocks.instanceMatrix.needsUpdate = true;
+        if (rubbleBlocks.instanceColor) rubbleBlocks.instanceColor.needsUpdate = true;
+        rubbleGroup.add(rubbleBlocks);
+
+        // Crumbled perimeter wall remnants
+        const brokenWall = new THREE.Mesh(G.box, damagedMat);
+        brokenWall.scale.set(w * 0.72, R(1.6, 3.0), 0.6);
+        brokenWall.position.set(0, 1.2, -d * 0.32);
+        brokenWall.rotation.set(R(-0.08, 0.08), R(-0.2, 0.2), R(-0.15, 0.15));
+        brokenWall.castShadow = true;
+        rubbleGroup.add(brokenWall);
+
+        modeGroup.add(rubbleGroup);
+
+        const b = {
+          x,
+          z,
+          w,
+          h,
+          d,
+          rh,
+          level,
+          hw: w / 2,
+          hd: d / 2,
+          top: level + h + rh,
+          initTop: level + h + rh,
+          mesh,
+          roof,
+          rubbleGroup,
+          intactMat,
+          crackedMat,
+          damagedMat,
+          initPosX: x,
+          initPosY: level + h / 2,
+          initPosZ: z,
+          tz: 0,
+          tilt: false,
+          damageState: 'intact',
+          accumulatedStress: 0,
+          resistance: R(0.92, 1.15),
+          targetSubsidence: 0,
+          currentSubsidence: 0,
+          targetTiltX: 0,
+          targetTiltZ: 0,
+          currentTiltX: 0,
+          currentTiltZ: 0,
+          shearX: 0,
+          shearZ: 0,
+        };
         if (rand() < dmg * 0.5) {
           b.tz = R(-0.18, 0.18);
+          b.targetTiltZ = b.tz;
+          b.currentTiltZ = b.tz;
           mesh.rotation.z = b.tz;
           mesh.rotation.x = R(-0.1, 0.1);
+          b.currentTiltX = mesh.rotation.x;
+          b.targetTiltX = mesh.rotation.x;
           mesh.position.y -= 0.4;
+          b.currentSubsidence = 0.4;
+          b.targetSubsidence = 0.4;
           b.tilt = true;
         }
         modeGroup.add(mesh);
@@ -865,16 +1088,147 @@ export function createDisasterEngine(canvas, { onStatsUpdate } = {}) {
     if ((g.userData.tick++ & 1) === 0) g.computeVertexNormals();
   }
 
+  /* =========================================================================
+   * EARTHQUAKE SINGLE-BURST TRIGGER & MAGNITUDE PHYSICS CONFIGURATION
+   * ========================================================================= */
+  const EARTHQUAKE_CONFIG = {
+    DURATION_SEC: 10.0,       // Exactly 10.0 seconds of seismic activity
+    DEFAULT_MAGNITUDE: 7.0,   // Default magnitude: M 7.0 Major
+    MIN_MAGNITUDE: 1.0,       // Minimum magnitude: M 1.0
+    MAX_MAGNITUDE: 9.0,       // Maximum magnitude: M 9.0
+    P_WAVE_DURATION: 1.8,     // P-wave compressional onset duration
+    PEAK_SHAKE_END: 6.5,      // End of peak S/Rayleigh wave window
+  };
+
+  const earthquakeState = {
+    active: false,
+    elapsed: EARTHQUAKE_CONFIG.DURATION_SEC, // Initial load starts as completed post-M7.0 aftermath
+    magnitude: EARTHQUAKE_CONFIG.DEFAULT_MAGNITUDE,
+    envelope: 0.0,            // Normalized 0.0 - 1.0 temporal envelope
+    pga: 0.08 * Math.pow(10, 0.28 * (7.0 - 5.0)), // Peak ground acceleration ~0.29g
+    displacement: 0.0,        // Peak ground displacement in Three.js world units
+    statusText: 'M7.0 event complete - Partial collapse: Upper-story shearing & tilt',
+  };
+
+  /**
+   * Smooth 10-second earthquake envelope curve E(t).
+   * Ramps up cleanly over 1.8s, sustains peak shaking through 6.5s,
+   * then executes a smooth C^1 continuous coda decay to exactly 0.0 at 10.0s.
+   */
+  function getEarthquakeEnvelope(t, duration = EARTHQUAKE_CONFIG.DURATION_SEC) {
+    if (t <= 0 || t >= duration) return 0.0;
+    const rUp = EARTHQUAKE_CONFIG.P_WAVE_DURATION;
+    const rDown = EARTHQUAKE_CONFIG.PEAK_SHAKE_END;
+    if (t < rUp) {
+      // Smoothstep ramp-up for primary P-wave onset (0 to 1)
+      const u = t / rUp;
+      return u * u * (3 - 2 * u);
+    } else if (t <= rDown) {
+      // Main shock S-wave and Rayleigh surface wave sustain with harmonic wave-train
+      const phase = (t - rUp) / (rDown - rUp);
+      return 0.88 + 0.12 * Math.cos(phase * Math.PI * 4);
+    } else {
+      // Coda wave decay to exactly 0.0 at duration with zero derivative
+      const u = (duration - t) / (duration - rDown);
+      return u * u * (3 - 2 * u);
+    }
+  }
+
+  function emitEarthquakeUpdate() {
+    if (onEarthquakeUpdate) {
+      onEarthquakeUpdate(getEarthquakeState());
+    }
+  }
+
+  /**
+   * Target accumulated structural stress based on earthquake magnitude M.
+   * Calibrated strictly to the 5 damage tiers:
+   * Tier 1: M < 4.0      -> S < 1.0  (No Damage: Elastic sway only)
+   * Tier 2: 4.0 <= M < 5.5 -> 1.0 <= S < 3.0 (Minor Cosmetic Damage: Hairline cracks)
+   * Tier 3: 5.5 <= M < 7.0 -> 3.0 <= S < 6.0 (Moderate Damage: Tilt, settling, dust bursts)
+   * Tier 4: 7.0 <= M < 8.2 -> 6.0 <= S < 10.0 (Partial Collapse: Upper shear, severe tilt)
+   * Tier 5: M >= 8.2      -> S >= 10.0 (Catastrophic Failure: Pancake collapse into rubble)
+   */
+  function getEarthquakeTargetStress(M) {
+    if (M < 4.0) {
+      return (M / 4.0) * 0.82;
+    }
+    if (M < 5.5) {
+      const u = (M - 4.0) / 1.5;
+      return 1.15 + u * 1.70;
+    }
+    if (M < 7.0) {
+      const u = (M - 5.5) / 1.5;
+      return 3.25 + u * 2.50;
+    }
+    if (M < 8.2) {
+      const u = (M - 7.0) / 1.2;
+      return 6.30 + u * 3.30;
+    }
+    const u = Math.min(1.0, (M - 8.2) / 0.8);
+    return 10.5 + u * 4.0;
+  }
+
+  /**
+   * Applies the default post-M7.0 earthquake damage aftermath (Tier 4: Partial Collapse)
+   * to all buildings on initial mount without requiring the 10-second shaking sequence.
+   */
+  function applyM70Aftermath() {
+    for (const b of buildings) {
+      if (!b.mesh) continue;
+      b.damageState = 'partial_collapse';
+      b.accumulatedStress = 7.5; // Tier 4 calibrated stress
+      b.mesh.material = b.damagedMat;
+      b.tilt = true;
+
+      // 1. Severe structural tilt
+      const signZ = rand() < 0.5 ? -1 : 1;
+      b.targetTiltZ = signZ * R(0.20, 0.32);
+      b.targetTiltX = R(-0.16, 0.16);
+      b.currentTiltZ = b.targetTiltZ;
+      b.currentTiltX = b.targetTiltX;
+      b.tz = b.targetTiltZ;
+      b.mesh.rotation.z = b.targetTiltZ;
+      b.mesh.rotation.x = b.targetTiltX;
+
+      // 2. Downward vertical subsidence (settling 30% to 50% into foundation)
+      b.targetSubsidence = Math.min(b.h * 0.52, R(2.0, 4.2));
+      b.currentSubsidence = b.targetSubsidence;
+      b.mesh.position.y = b.initPosY - b.targetSubsidence;
+
+      // 3. Upper-story shearing of the roof and upper facade
+      b.shearX = R(-1.2, 1.2);
+      b.shearZ = R(-1.2, 1.2);
+      if (b.roof) {
+        b.roof.position.x = b.shearX;
+        b.roof.position.z = b.shearZ;
+        b.roof.rotation.z = R(-0.25, 0.25);
+        b.roof.rotation.x = R(-0.2, 0.2);
+      }
+
+      // 4. Perimeter rubble & slab piles at building base
+      if (b.rubbleGroup) {
+        b.rubbleGroup.visible = true;
+      }
+
+      // 5. Update obstacle top height for UAV line-of-sight
+      b.top = Math.max(b.level + 2.5, b.initTop - b.targetSubsidence);
+    }
+  }
+
   /* ---------- modes ---------- */
   const MODES = [
     {
       ...MODES_META[0],
       sky: 0xb6c0c6, fogNear: 90, fogFar: 330, hemiGround: 0x6b5d48,
-      town: [0, 0], townR: 54, safe: [82, 72], camR: 162,
+      town: [0, 0], townR: 54, safe: [82, 72], camR: 165,
       raw: (x, z) => hills(x, z, 14) + fbm(x * 0.08, z * 0.08, 2) * 1.2,
       build(c) {
         const L = this._townLevel;
-        addTown(0, 0, L, { damage: 1 });
+        // Build the town grid
+        addTown(0, 0, L, { damage: 0 });
+        // Apply default post-M7.0 earthquake damage aftermath (Tier 4: Partial Collapse) immediately on mount
+        applyM70Aftermath();
         let px = -140, pz = -95;
         const fis = new THREE.InstancedMesh(G.box, M(0x1b1612), 75);
         for (let k = 0; k < 75; k++) {
@@ -894,55 +1248,360 @@ export function createDisasterEngine(canvas, { onStatsUpdate } = {}) {
         makeVehicle(0xf4f4f4, [0xff2a2a, 0x2a6bff], 56, 14, Math.PI / 2);
         makeVehicle(0xc0262b, [0xff2a2a, 0xff2a2a], 56, -12, Math.PI / 2);
         makeVehicle(0xf4f4f4, [0xff2a2a, 0x2a6bff], -56, 10, -Math.PI / 2);
-        const rub = buildings.filter(b => b.rubble), src = rub.length ? rub : buildings;
-        new Particles(520, {
-          color: 0x9c8b74, size: 3.2, opacity: 0.35, prewarm: true,
-          spawn: (i, p) => {
-            const b = pick(src);
-            p.set(i, b.x + R(-b.hw, b.hw), L + R(0, 2), b.z + R(-b.hd, b.hd), R(-0.6, 0.6), R(0.4, 1.4), R(-0.6, 0.6), R(3, 7));
-          }
+
+        // Dynamic dust particle system for structural stress, cracks & failure bursts
+        const DUST_COUNT = 600;
+        const dustPos = new Float32Array(DUST_COUNT * 3);
+        const dustVel = new Float32Array(DUST_COUNT * 3);
+        const dustLife = new Float32Array(DUST_COUNT);
+
+        for (let i = 0; i < DUST_COUNT; i++) {
+          dustPos[i * 3 + 1] = -999;
+          dustLife[i] = 0;
+        }
+
+        const dustGeo = new THREE.BufferGeometry();
+        dustGeo.setAttribute('position', new THREE.BufferAttribute(dustPos, 3));
+        const dustMat = new THREE.PointsMaterial({
+          color: 0xc4b9a8,
+          size: 3.2,
+          map: dotTex,
+          transparent: true,
+          opacity: 0.6,
+          depthWrite: false,
+          blending: THREE.NormalBlending,
+          sizeAttenuation: true,
         });
+        const dustPoints = new THREE.Points(dustGeo, dustMat);
+        dustPoints.frustumCulled = false;
+        modeGroup.add(dustPoints);
+
+        c.spawnDustBurst = (bx, bz, by, count, radius, upwardVel = 2.2) => {
+          let spawned = 0;
+          for (let i = 0; i < DUST_COUNT && spawned < count; i++) {
+            if (dustLife[i] <= 0) {
+              const k = i * 3;
+              const angle = rand() * Math.PI * 2;
+              const r = rand() * radius;
+              dustPos[k] = bx + Math.cos(angle) * r;
+              dustPos[k + 1] = by + R(0.2, 1.2);
+              dustPos[k + 2] = bz + Math.sin(angle) * r;
+
+              const radialSpeed = R(0.8, 2.4);
+              dustVel[k] = Math.cos(angle) * radialSpeed;
+              dustVel[k + 1] = R(upwardVel * 0.7, upwardVel * 1.3);
+              dustVel[k + 2] = Math.sin(angle) * radialSpeed;
+
+              const life = R(1.8, 3.5);
+              dustLife[i] = life;
+              spawned++;
+            }
+          }
+          dustGeo.attributes.position.needsUpdate = true;
+        };
+
+        c.updateDust = dt => {
+          let anyActive = false;
+          for (let i = 0; i < DUST_COUNT; i++) {
+            if (dustLife[i] > 0) {
+              anyActive = true;
+              const k = i * 3;
+              dustPos[k] += dustVel[k] * dt;
+              dustPos[k + 1] += dustVel[k + 1] * dt;
+              dustPos[k + 2] += dustVel[k + 2] * dt;
+              dustVel[k + 1] -= 1.8 * dt; // gravity deceleration
+              dustVel[k] *= 0.96; // air drag
+              dustVel[k + 2] *= 0.96;
+              dustLife[i] -= dt;
+              if (dustLife[i] <= 0) {
+                dustPos[k + 1] = -999;
+              }
+            }
+          }
+          if (anyActive) {
+            dustGeo.attributes.position.needsUpdate = true;
+          }
+        };
+
+        c.clearDust = () => {
+          for (let i = 0; i < DUST_COUNT; i++) {
+            dustLife[i] = 0;
+            dustPos[i * 3 + 1] = -999;
+          }
+          dustGeo.attributes.position.needsUpdate = true;
+        };
+
         c.debris = [];
         const standing = buildings.filter(b => b.mesh);
-        for (let k = 0; k < 32; k++) {
-          const m = new THREE.Mesh(G.box, M(0x8d857b));
-          m.scale.set(R(0.4, 1), R(0.3, 0.7), R(0.4, 1));
+        for (let k = 0; k < 42; k++) {
+          const m = new THREE.Mesh(G.box, M(pick([0x8d857b, 0x7b7369, 0x9b9389, 0x6e6862])));
+          m.scale.set(R(0.4, 1.2), R(0.3, 0.9), R(0.4, 1.2));
           m.castShadow = true;
+          // Spawn baseline fallen debris fragments on the ground around the damaged buildings
+          const b = pick(standing);
+          const angle = rand() * Math.PI * 2;
+          const dist = R(b.hw * 0.8, b.hw * 1.8);
+          const dx = b.x + Math.cos(angle) * dist;
+          const dz = b.z + Math.sin(angle) * dist;
+          const gy = H(dx, dz) + 0.18;
+          m.position.set(dx, gy, dz);
+          m.rotation.set(R(-0.4, 0.4), rand() * 3.14, R(-0.4, 0.4));
+          m.visible = true;
           modeGroup.add(m);
-          c.debris.push({ m, vy: 0, rest: R(0, 3), src: standing });
-          m.visible = false;
+          c.debris.push({ m, vy: 0, vx: 0, vz: 0, rest: 999, src: standing });
         }
       },
       update(dt, t, c) {
-        const cyc = t % 14, env = cyc < 6 ? Math.sin((Math.PI * cyc) / 6) : 0.06;
-        c.env = env;
-        const amp = env * INT * 0.8 * (reduced ? 0.25 : 1);
-        world.position.set((rand() - 0.5) * amp, (rand() - 0.5) * amp * 0.4, (rand() - 0.5) * amp);
-        for (const b of buildings) if (b.tilt) b.mesh.rotation.z = b.tz + Math.sin(t * 23 + b.x) * 0.015 * env * INT;
-        for (const d of c.debris) {
-          if (d.rest > 0) {
-            d.rest -= dt;
-            if (d.rest <= 0 && env > 0.35 && d.src.length) {
-              const b = pick(d.src);
-              d.m.visible = true;
-              d.m.position.set(b.x + (rand() < 0.5 ? -1 : 1) * b.hw, b.top, b.z + R(-b.hd, b.hd));
-              d.vy = R(0, 3);
-            } else if (d.rest <= 0) d.rest = 0.5;
+        const M = earthquakeState.magnitude;
+        // Peak ground acceleration (PGA) in g: Esteva scaling law
+        const pga = 0.08 * Math.pow(10, 0.28 * (M - 5.0));
+        earthquakeState.pga = pga;
+
+        let env = 0.0;
+        if (earthquakeState.active) {
+          // Internal timer decoupled from display framerate
+          earthquakeState.elapsed += dt;
+
+          if (earthquakeState.elapsed >= EARTHQUAKE_CONFIG.DURATION_SEC) {
+            // Exactly 10.0 seconds reached: complete event cleanly
+            earthquakeState.active = false;
+            earthquakeState.elapsed = EARTHQUAKE_CONFIG.DURATION_SEC;
+            earthquakeState.envelope = 0.0;
+            env = 0.0;
+
+            let aftermathSummary = 'No structural damage (Elastic response)';
+            if (M >= 8.2) aftermathSummary = 'Catastrophic failure: Pancake collapse & rubble';
+            else if (M >= 7.0) aftermathSummary = 'Partial collapse: Upper-story shearing & tilt';
+            else if (M >= 5.5) aftermathSummary = 'Moderate damage: Structural tilt & settling';
+            else if (M >= 4.0) aftermathSummary = 'Minor damage: Hairline facade & window cracks';
+
+            earthquakeState.statusText = `M${M.toFixed(1)} event complete - ${aftermathSummary}`;
+            emitStats();
+            emitEarthquakeUpdate();
           } else {
-            d.vy -= 25 * dt;
-            d.m.position.y += d.vy * dt;
-            d.m.rotation.x += dt * 4;
-            d.m.rotation.z += dt * 3;
-            const gy = H(d.m.position.x, d.m.position.z) + 0.2;
-            if (d.m.position.y <= gy) {
-              d.m.position.y = gy;
-              d.rest = R(1, 4);
+            env = getEarthquakeEnvelope(earthquakeState.elapsed, EARTHQUAKE_CONFIG.DURATION_SEC);
+            earthquakeState.envelope = env;
+
+            const t_e = earthquakeState.elapsed;
+            const remaining = EARTHQUAKE_CONFIG.DURATION_SEC - t_e;
+            if (t_e < EARTHQUAKE_CONFIG.P_WAVE_DURATION) {
+              earthquakeState.statusText = `M${M.toFixed(1)} P-wave onset · Tremor (${remaining.toFixed(1)}s left)`;
+            } else if (t_e <= EARTHQUAKE_CONFIG.PEAK_SHAKE_END) {
+              earthquakeState.statusText = `M${M.toFixed(1)} Peak shaking · PGA ~${pga.toFixed(2)}g (${remaining.toFixed(1)}s left)`;
+            } else {
+              earthquakeState.statusText = `M${M.toFixed(1)} Coda decay · Subsiding (${remaining.toFixed(1)}s left)`;
+            }
+          }
+        } else {
+          env = 0.0;
+          earthquakeState.envelope = 0.0;
+          if (earthquakeState.elapsed <= 0) {
+            earthquakeState.statusText = 'Quake inactive · Ready to trigger';
+          }
+        }
+        c.env = env;
+
+        // Progressive Structural Damage Accumulation Integral
+        // Accumulated structural stress is computed continuously over the 10s shaking duration
+        if (earthquakeState.active && env > 0.001) {
+          const targetStress = getEarthquakeTargetStress(M);
+          // Total integral of E(t)^2 over 10 seconds is approx 5.74
+          const baseStressRate = (targetStress / 5.74) * (env * env);
+          let structuralChangeOccurred = false;
+
+          for (const b of buildings) {
+            if (!b.mesh) continue;
+            const dStress = (baseStressRate / (b.resistance || 1.0)) * dt;
+            b.accumulatedStress = (b.accumulatedStress || 0) + dStress;
+            const S = b.accumulatedStress;
+
+            // Tier 1: S < 1.0 -> Intact (Elastic sway only, no cracking)
+
+            // Tier 2: 1.0 <= S < 3.0 -> Minor Cosmetic Damage (Surface hairline cracks & broken window textures)
+            if (S >= 1.0 && b.damageState === 'intact') {
+              b.damageState = 'cracked';
+              b.mesh.material = b.crackedMat;
+              if (c.spawnDustBurst) {
+                c.spawnDustBurst(b.x, b.z, b.level + b.h * 0.4, 14, b.hw * 0.8, 1.2);
+              }
+            }
+
+            // Tier 3: 3.0 <= S < 6.0 -> Moderate Structural Damage (Visible tilt/settling, facade detachment, dust bursts)
+            if (S >= 3.0 && (b.damageState === 'intact' || b.damageState === 'cracked')) {
+              b.damageState = 'damaged';
+              b.mesh.material = b.damagedMat;
+              b.tilt = true;
+              b.tz = (Math.sign(b.tz) || (rand() < 0.5 ? -1 : 1)) * R(0.08, 0.14);
+              b.targetTiltZ = b.tz;
+              b.targetTiltX = R(-0.08, 0.08);
+              b.targetSubsidence = R(0.4, 0.85); // Downward vertical subsidence
+              if (c.spawnDustBurst) {
+                c.spawnDustBurst(b.x, b.z, b.level, 35, b.hw * 1.1, 2.2);
+              }
+              structuralChangeOccurred = true;
+            }
+
+            // Tier 4: 6.0 <= S < 10.0 -> Partial Collapse (Upper-story shearing, severe tilt, section fracture, dense dust)
+            if (S >= 6.0 && b.damageState !== 'partial_collapse' && b.damageState !== 'rubble') {
+              b.damageState = 'partial_collapse';
+              b.mesh.material = b.damagedMat;
+              b.tilt = true;
+              b.targetTiltZ = (Math.sign(b.targetTiltZ) || (rand() < 0.5 ? -1 : 1)) * R(0.20, 0.32);
+              b.targetTiltX = R(-0.16, 0.16);
+              b.tz = b.targetTiltZ;
+              b.targetSubsidence = Math.min(b.h * 0.52, R(2.0, 4.2));
+              b.shearX = R(-1.2, 1.2);
+              b.shearZ = R(-1.2, 1.2);
+              if (b.roof) {
+                b.roof.position.x = b.shearX;
+                b.roof.position.z = b.shearZ;
+                b.roof.rotation.z = R(-0.25, 0.25);
+                b.roof.rotation.x = R(-0.2, 0.2);
+              }
+              if (b.rubbleGroup) {
+                b.rubbleGroup.visible = true;
+              }
+              b.top = Math.max(b.level + 2.5, b.initTop - b.targetSubsidence);
+              if (c.spawnDustBurst) {
+                c.spawnDustBurst(b.x, b.z, b.level + 0.5, 75, b.hw * 1.3, 3.2);
+              }
+              structuralChangeOccurred = true;
+            }
+
+            // Tier 5: S >= 10.0 -> Catastrophic Failure (Pancake collapse down to ground-level rubble piles, major plumes)
+            if (S >= 10.0 && b.damageState !== 'rubble') {
+              b.damageState = 'rubble';
+              b.mesh.visible = false;
+              if (b.rubbleGroup) {
+                b.rubbleGroup.visible = true;
+              }
+              b.top = b.level + 1.4;
+              if (c.spawnDustBurst) {
+                c.spawnDustBurst(b.x, b.z, b.level + 0.3, 140, b.hw * 1.5, 4.5);
+              }
+              structuralChangeOccurred = true;
+            }
+          }
+
+          if (structuralChangeOccurred) {
+            syncWorldToSharedStore(curModeIndex);
+          }
+        }
+
+        // Smooth procedural subsidence and permanent tilt convergence
+        for (const b of buildings) {
+          if (b.damageState === 'rubble' || !b.mesh) continue;
+          b.currentSubsidence += (b.targetSubsidence - b.currentSubsidence) * Math.min(1.0, dt * 4.0);
+          b.currentTiltX += (b.targetTiltX - b.currentTiltX) * Math.min(1.0, dt * 4.0);
+          b.currentTiltZ += (b.targetTiltZ - b.currentTiltZ) * Math.min(1.0, dt * 4.0);
+          b.mesh.position.y = b.initPosY - b.currentSubsidence;
+        }
+
+        if (env > 0.0001) {
+          const t_e = earthquakeState.elapsed;
+
+          // 1. Amplitude (Displacement) scaling: Exponential scaling ~ 10^(0.35 * (M - 5.0))
+          const baseDisp = 0.18 * Math.pow(10, 0.35 * (M - 5.0));
+          const amp = env * baseDisp * INT * (reduced ? 0.28 : 1.0);
+          earthquakeState.displacement = amp;
+
+          // 2. Frequency & Harmonic Waves:
+          const omegaP = 2 * Math.PI * (3.4 + 0.35 * M);
+          const omegaS = 2 * Math.PI * (1.3 + 0.12 * M);
+          const waveX = Math.sin(t_e * omegaS) * 0.7 + Math.sin(t_e * omegaP) * 0.3;
+          const waveZ = Math.cos(t_e * omegaS * 0.88 + 0.4) * 0.7 + Math.cos(t_e * omegaP * 0.94) * 0.3;
+          const waveY = Math.sin(t_e * omegaP * 1.3) * 0.45;
+
+          // 3. High-Frequency Stochastic Noise & Ground Jitter
+          const jitterScale = 0.45 * Math.pow(M / 5.0, 1.4);
+          const jitterX = (vnoise(t_e * 26.0, 14.1) - 0.5) * 2.0 * jitterScale;
+          const jitterZ = (vnoise(t_e * 26.0, 83.7) - 0.5) * 2.0 * jitterScale;
+          const jitterY = (vnoise(t_e * 34.0, 41.9) - 0.5) * 1.6 * jitterScale;
+
+          // Apply combined ground motion to world group
+          const dx = amp * (waveX + jitterX);
+          const dy = amp * (waveY + jitterY) * 0.35;
+          const dz = amp * (waveZ + jitterZ);
+          world.position.set(dx, dy, dz);
+
+          // 4. Structural Building Tilt Dynamics (Angular oscillation + permanent tilt baseline)
+          const swayFactor = env * (0.012 * Math.pow(10, 0.24 * (M - 5.0))) * INT;
+          for (const b of buildings) {
+            if (!b.mesh || !b.mesh.visible) continue;
+            const elasticOscZ = Math.sin(t_e * 24.0 + b.x * 0.4) * swayFactor * (b.h / 8.0);
+            const elasticOscX = Math.cos(t_e * 19.0 + b.z * 0.4) * swayFactor * 0.5 * (b.h / 8.0);
+            b.mesh.rotation.z = b.currentTiltZ + elasticOscZ;
+            b.mesh.rotation.x = b.currentTiltX + elasticOscX;
+          }
+
+          // 5. Dynamic Debris Physics & Acceleration / Force Scaling
+          for (const d of c.debris) {
+            if (d.rest > 0) {
+              d.rest -= dt;
+              // Debris shedding only occurs above M 4.0 during substantial shaking (env > 0.3)
+              if (d.rest <= 0 && M >= 4.0 && env > 0.3 && d.src.length) {
+                const b = pick(d.src);
+                d.m.visible = true;
+                const side = rand() < 0.5 ? -1 : 1;
+                d.m.position.set(b.x + side * b.hw, b.top, b.z + R(-b.hd, b.hd));
+                // Horizontal ejection impulse proportional to Peak Ground Acceleration (PGA)
+                const ejectForce = pga * 6.5 * (rand() * 0.8 + 0.6);
+                d.vx = side * ejectForce * R(0.5, 1.2);
+                d.vz = (rand() - 0.5) * ejectForce;
+                d.vy = R(1.0, 3.5) * Math.sqrt(pga / 0.08);
+              } else if (d.rest <= 0) {
+                d.rest = R(0.4, 1.5);
+              }
+            } else {
+              // Debris flight under gravity
+              d.vy -= 26 * dt;
+              d.m.position.x += (d.vx || 0) * dt;
+              d.m.position.z += (d.vz || 0) * dt;
+              d.m.position.y += d.vy * dt;
+              d.m.rotation.x += dt * 4.5;
+              d.m.rotation.z += dt * 3.5;
+              const gy = H(d.m.position.x, d.m.position.z) + 0.2;
+              if (d.m.position.y <= gy) {
+                d.m.position.y = gy;
+                d.vx = 0;
+                d.vz = 0;
+                d.rest = R(1.5, 4.5);
+              }
+            }
+          }
+        } else {
+          // Strictly neutral origin / baseline when earthquake is inactive or completed
+          world.position.set(0, 0, 0);
+          for (const b of buildings) {
+            if (!b.mesh || !b.mesh.visible) continue;
+            // Structural tilt persists permanently after earthquake concludes
+            b.mesh.rotation.z = b.currentTiltZ;
+            b.mesh.rotation.x = b.currentTiltX;
+          }
+
+          // Any airborne debris completes landing and persists on ground
+          for (const d of c.debris) {
+            if (d.rest <= 0 && d.m.visible) {
+              d.vy -= 26 * dt;
+              d.m.position.x += (d.vx || 0) * dt;
+              d.m.position.z += (d.vz || 0) * dt;
+              d.m.position.y += d.vy * dt;
+              const gy = H(d.m.position.x, d.m.position.z) + 0.2;
+              if (d.m.position.y <= gy) {
+                d.m.position.y = gy;
+                d.vx = 0;
+                d.vz = 0;
+                d.rest = 999;
+              }
             }
           }
         }
+
+        // Update dynamic dust particle system
+        if (c.updateDust) c.updateDust(dt);
       },
-      status(c) {
-        return c.env > 0.6 ? 'Strong shaking' : c.env > 0.2 ? 'Moderate shaking' : 'Aftershock lull';
+      status() {
+        return earthquakeState.statusText;
       }
     },
     {
@@ -1745,7 +2404,8 @@ export function createDisasterEngine(canvas, { onStatsUpdate } = {}) {
       z: b.z,
       w: (b.hw || 3) * 2,
       d: (b.hd || 3) * 2,
-      h: Math.max(3, (b.top || 8) - (m._townLevel || 0)),
+      h: Math.max(1, (b.top || 8) - (m._townLevel || 0)),
+      damageState: b.damageState || 'intact',
     }));
     const survivors3D = victimList.map((v) => ({
       id: v.id,
@@ -1888,6 +2548,25 @@ export function createDisasterEngine(canvas, { onStatsUpdate } = {}) {
   window.addEventListener('blur', clearPtrs);
   canvas.addEventListener('wheel', onWheel, { passive: false });
 
+  const onKeyCamera = e => {
+    const tag = e.target?.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || e.target?.isContentEditable) return;
+    if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') {
+      orbit.theta -= 0.05;
+    } else if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') {
+      orbit.theta += 0.05;
+    } else if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') {
+      orbit.phi = clamp(orbit.phi - 0.04, 0.2, 1.45);
+    } else if (e.key === 'ArrowDown' || e.key === 's' || e.key === 'S') {
+      orbit.phi = clamp(orbit.phi + 0.04, 0.2, 1.45);
+    } else if (e.key === '+' || e.key === '=') {
+      orbit.r = clamp(orbit.r * 0.92, 35, 280);
+    } else if (e.key === '-' || e.key === '_') {
+      orbit.r = clamp(orbit.r * 1.08, 35, 280);
+    }
+  };
+  window.addEventListener('keydown', onKeyCamera);
+
   function updateCamera() {
     const t = orbit.target, s = Math.sin(orbit.phi);
     camera.position.set(t.x + orbit.r * s * Math.sin(orbit.theta), t.y + orbit.r * Math.cos(orbit.phi), t.z + orbit.r * s * Math.cos(orbit.theta));
@@ -1921,10 +2600,123 @@ export function createDisasterEngine(canvas, { onStatsUpdate } = {}) {
     }
   }
 
+  function triggerEarthquake() {
+    if (earthquakeState.active) return false;
+    // Reset to pristine baseline before launching the 10-second shaking sequence
+    resetEarthquakeBuildings(true);
+    earthquakeState.active = true;
+    earthquakeState.elapsed = 0.0;
+    earthquakeState.envelope = 0.0;
+    // Reset debris cooldowns on standing buildings
+    if (ctx && Array.isArray(ctx.debris)) {
+      for (const d of ctx.debris) {
+        d.rest = R(0.2, 1.8);
+      }
+    }
+    sharedSim.logSync(`Earthquake triggered: Magnitude M ${earthquakeState.magnitude.toFixed(1)} (10.0s single-burst)`);
+    emitStats();
+    emitEarthquakeUpdate();
+    return true;
+  }
+
+  function setEarthquakeMagnitude(val) {
+    const next = clamp(Number(val) || 7.0, 1.0, 9.0);
+    earthquakeState.magnitude = next;
+    earthquakeState.pga = 0.08 * Math.pow(10, 0.28 * (next - 5.0));
+    emitStats();
+    emitEarthquakeUpdate();
+  }
+
+  function getEarthquakeState() {
+    return {
+      active: earthquakeState.active,
+      elapsed: earthquakeState.elapsed,
+      duration: EARTHQUAKE_CONFIG.DURATION_SEC,
+      remaining: Math.max(0, EARTHQUAKE_CONFIG.DURATION_SEC - earthquakeState.elapsed),
+      magnitude: earthquakeState.magnitude,
+      envelope: earthquakeState.envelope,
+      pga: 0.08 * Math.pow(10, 0.28 * (earthquakeState.magnitude - 5.0)),
+      displacement: earthquakeState.displacement,
+      status: earthquakeState.statusText,
+    };
+  }
+
+  function resetEarthquakeBuildings(isPreTrigger = false) {
+    if (curModeIndex !== 0) return;
+    earthquakeState.active = false;
+    earthquakeState.elapsed = 0.0;
+    earthquakeState.envelope = 0.0;
+    world.position.set(0, 0, 0);
+
+    for (const b of buildings) {
+      b.damageState = 'intact';
+      b.accumulatedStress = 0;
+      b.targetSubsidence = 0;
+      b.currentSubsidence = 0;
+      b.targetTiltX = 0;
+      b.targetTiltZ = 0;
+      b.currentTiltX = 0;
+      b.currentTiltZ = 0;
+      b.tilt = false;
+      b.tz = 0;
+      b.shearX = 0;
+      b.shearZ = 0;
+      b.top = b.initTop || (b.level + b.h + b.rh);
+
+      if (b.mesh) {
+        b.mesh.visible = true;
+        b.mesh.material = b.intactMat;
+        b.mesh.position.set(b.initPosX, b.initPosY, b.initPosZ);
+        b.mesh.rotation.set(0, 0, 0);
+      }
+      if (b.roof) {
+        b.roof.position.set(0, b.h / 2 + b.rh / 2, 0);
+        b.roof.rotation.set(0, 0, 0);
+      }
+      if (b.rubbleGroup) {
+        b.rubbleGroup.visible = false;
+      }
+    }
+
+    if (ctx && typeof ctx.clearDust === 'function') {
+      ctx.clearDust();
+    }
+    if (ctx && Array.isArray(ctx.debris)) {
+      for (const d of ctx.debris) {
+        d.m.visible = false;
+        d.vx = 0;
+        d.vy = 0;
+        d.vz = 0;
+        d.rest = 999;
+      }
+    }
+
+    syncWorldToSharedStore(0);
+    if (!isPreTrigger) {
+      earthquakeState.statusText = 'City restored to pristine condition · Ready';
+      sharedSim.logSync('Earthquake simulation: City structures reset to pristine baseline');
+      emitStats();
+      emitEarthquakeUpdate();
+    }
+  }
+
   let curModeIndex = 0;
   function setMode(i) {
     clearMode();
     curModeIndex = i;
+    world.position.set(0, 0, 0);
+    earthquakeState.active = false;
+    if (i === 0) {
+      earthquakeState.magnitude = 7.0;
+      earthquakeState.pga = 0.08 * Math.pow(10, 0.28 * (7.0 - 5.0));
+      earthquakeState.elapsed = EARTHQUAKE_CONFIG.DURATION_SEC;
+      earthquakeState.envelope = 0.0;
+      earthquakeState.statusText = 'M7.0 event complete - Partial collapse: Upper-story shearing & tilt';
+    } else {
+      earthquakeState.elapsed = 0.0;
+      earthquakeState.envelope = 0.0;
+    }
+    emitEarthquakeUpdate();
     const m = MODES[i];
     curMode = m;
     ctx = {};
@@ -2007,9 +2799,12 @@ export function createDisasterEngine(canvas, { onStatsUpdate } = {}) {
     updateCamera();
     renderer.render(scene, camera);
     hudAcc += dt;
-    if (hudAcc > 0.2) {
+    if (hudAcc > 0.15) {
       hudAcc = 0;
       emitStats();
+      if (curModeIndex === 0) {
+        emitEarthquakeUpdate();
+      }
     }
   }
 
@@ -2020,6 +2815,10 @@ export function createDisasterEngine(canvas, { onStatsUpdate } = {}) {
     },
     focusPosition,
     selectObjectAtClientPos: pick3DObject,
+    triggerEarthquake,
+    setEarthquakeMagnitude,
+    getEarthquakeState,
+    resetEarthquakeBuildings,
   };
   sharedSim.register3DController(ctrl3D);
 
@@ -2029,6 +2828,10 @@ export function createDisasterEngine(canvas, { onStatsUpdate } = {}) {
   return {
     getInitialAutoRotate: () => orbit.auto,
     setMode,
+    triggerEarthquake,
+    setEarthquakeMagnitude,
+    getEarthquakeState,
+    resetEarthquakeBuildings,
     setIntensity(val) {
       INT = val;
       if (curMode) {
@@ -2063,8 +2866,12 @@ export function createDisasterEngine(canvas, { onStatsUpdate } = {}) {
         cancelAnimationFrame(rafId);
         rafId = 0;
       }
+      world.position.set(0, 0, 0);
+      earthquakeState.active = false;
+      earthquakeState.elapsed = 0.0;
       window.removeEventListener('resize', resize);
       window.removeEventListener('blur', clearPtrs);
+      window.removeEventListener('keydown', onKeyCamera);
       document.removeEventListener('visibilitychange', onVisChange);
       canvas.removeEventListener('pointerdown', onPtrDown);
       canvas.removeEventListener('pointermove', onPtrMove);

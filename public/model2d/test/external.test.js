@@ -167,7 +167,8 @@ test('F05: browser JSON and native MAVLink round trip use one immutable world ma
   const init = JSON.parse(ws.sent[0]);
   assert.deepStrictEqual(init.origin, { frame: 'common-local-origin', x: 1000, y: 500, groundM: 250 });
   const exchange = goals => {
-    const result = spawnSync('python', ['-B', '-c', `
+    const pyCmd = process.env.PYTHON || (process.platform === 'win32' ? 'python' : 'python3');
+    const result = spawnSync(pyCmd, ['-B', '-c', `
 import asyncio, json, sys
 sys.path.insert(0, 'sitl')
 import test_bridge as h
