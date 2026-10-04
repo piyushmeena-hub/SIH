@@ -153,7 +153,7 @@ export default function App() {
   }, [syncSnapshotNow]);
 
   const handleStatsUpdate = useCallback(next => {
-    setHudStats(prev => (prev.status === next.status && prev.waiting === next.waiting ? prev : next));
+    setHudStats(prev => (prev.status === next.status && prev.waiting === next.waiting && prev.slide === next.slide ? prev : next));
   }, []);
 
   useEffect(() => {
@@ -262,6 +262,11 @@ export default function App() {
 
   const handleResetView = () => {
     engineRef.current?.resetView();
+  };
+
+  const handleSlide = action => {
+    const slide = engineRef.current?.landslide(action);
+    if (slide) setHudStats(prev => ({ ...prev, slide }));
   };
 
   const handleSelectDrone = id => {
@@ -600,6 +605,20 @@ export default function App() {
                     Reset view
                   </button>
                 </div>
+                {currentMode.id === 'landslide' && (
+                  <div className="hazard-card">
+                    <button
+                      className="hazard-btn"
+                      type="button"
+                      id="bSlide"
+                      aria-pressed={hudStats.slide === 'running'}
+                      onClick={() => handleSlide(hudStats.slide === 'running' ? 'stop' : 'start')}
+                    >
+                      <span className="hazard-dot" aria-hidden="true" />
+                      {hudStats.slide === 'running' ? 'Stop Landslide' : 'Start Landslide'}
+                    </button>
+                  </div>
+                )}
                 <div className="btns c2-actions">
                   <button
                     className="chip action-chip"

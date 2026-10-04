@@ -89,6 +89,15 @@ h1{font:700 21px/1.1 'Barlow Condensed',sans-serif;letter-spacing:.01em}
 .danger-chip{background:rgba(239,68,68,.18);border-color:rgba(239,68,68,.5);color:#fca5a5}
 .danger-chip:hover:not(:disabled){background:rgba(239,68,68,.32)}
 .danger-chip:disabled{opacity:.5;cursor:not-allowed}
+.hazard-card{display:flex;align-items:center;gap:8px;padding:10px;border:1px solid var(--border);border-radius:10px;background:rgba(255,255,255,.03)}
+.hazard-btn{display:inline-flex;align-items:center;gap:9px;background:rgba(239,68,68,.16);border:1px solid rgba(239,68,68,.5);
+  color:#ff8a8a;font:600 13px 'Barlow',sans-serif;padding:9px 16px;border-radius:8px;cursor:pointer;min-height:36px}
+.hazard-btn:hover{background:rgba(239,68,68,.28)}
+.hazard-btn:focus-visible{outline:2px solid #ff8a8a;outline-offset:2px}
+.hazard-dot{width:8px;height:8px;border-radius:50%;background:#ff4d4d;box-shadow:0 0 6px rgba(255,77,77,.9);flex:none}
+.hazard-btn[aria-pressed="true"] .hazard-dot{animation:hazardPulse 1s ease-in-out infinite}
+@keyframes hazardPulse{50%{opacity:.25}}
+@media (prefers-reduced-motion:reduce){.hazard-btn[aria-pressed="true"] .hazard-dot{animation:none}}
 .chip{background:rgba(255,255,255,.07);border:1px solid var(--border);color:var(--text);
   font:500 12.5px 'Barlow',sans-serif;padding:6px 10px;border-radius:8px;cursor:pointer;min-height:32px}
 .chip:hover{background:rgba(255,255,255,.13)}
