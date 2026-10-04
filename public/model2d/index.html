@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Drone swarm relay simulator</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='80' font-size='80'>&#128760;</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500&display=swap">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<header>
+  <h1>Drone swarm relay sim</h1>
+  <span class="sub">C2 mesh link planner &middot; real radio hardware specs</span>
+  <button id="viewBtn" style="width:auto; padding:4px 14px; margin-left:12px;">3D view</button>
+  <button id="backTo3DModelBtn" style="width:auto; padding:4px 14px; border-color:var(--lime); color:var(--lime);">Switch to 3D Model</button>
+  <span id="statusPill" class="pill ok">—</span>
+</header>
+
+<main>
+  <div id="mapWrap">
+    <canvas id="map"></canvas>
+    <div id="mapAttrib" style="display:none;">map &copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions" target="_blank" rel="noopener">CARTO</a></div>
+    <div id="legend">
+      <span class="lg-mission">mission</span>
+      <span class="lg-relay">relay</span>
+      <span class="lg-hold">hold</span>
+      <span class="lg-relink">relink</span>
+      <span class="lg-rescue">rescue</span>
+      <span class="lg-rtb">RTB/RTL</span>
+      <span class="lg-dead">down</span>
+    </div>
+  </div>
+
+  <aside>
+    <section>
+      <h2>Status</h2>
+      <div class="kpis">
+        <div class="kpi"><div class="k-label">Relay drones</div><div class="k-val" id="kpiRelays">0</div></div>
+        <div class="kpi"><div class="k-label">Mission drones</div><div class="k-val" id="kpiMission">0</div></div>
+        <div class="kpi"><div class="k-label">C2 contact</div><div class="k-val" id="kpiContact">—</div></div>
+        <div class="kpi"><div class="k-label">Packets delivered</div><div class="k-val" id="kpiPackets">0</div></div>
+        <div class="kpi"><div class="k-label">Chain throughput</div><div class="k-val" id="kpiThroughput">—</div></div>
+        <div class="kpi"><div class="k-label">Mission clock</div><div class="k-val" id="kpiClock">T+00:00</div></div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Radio hardware</h2>
+      <select id="radioSel"></select>
+      <div style="height:8px"></div>
+      <select id="envSel"></select>
+      <div style="height:10px"></div>
+      <div id="specCard"></div>
+    </section>
+
+    <section>
+      <h2>Mission setup</h2>
+      <div class="ctl-row">
+        <label for="countRange">Drones</label>
+        <input type="range" id="countRange" min="3" max="120" value="10" step="1">
+        <output id="countOut">10</output>
+      </div>
+      <div id="scaleNote" class="af-info" style="display:none;">Large fleets (100+) are supported and benchmarked — see bench/BASELINE.md. Expect the shared channel, not the physics, to be the binding constraint.</div>
+      <div style="height:10px"></div>
+      <select id="airframeSel"></select>
+      <div id="airframeInfo" class="af-info"></div>
+      <div class="ctl-row">
+        <label for="heteroChk">Mixed fleet</label>
+        <input type="checkbox" id="heteroChk" style="flex:0 0 auto; width:auto; accent-color:var(--accent);">
+        <output style="flex:1; text-align:left; color:var(--dim);">endurance relay wing + tactical drones</output>
+      </div>
+      <div id="heteroRow" style="display:none;">
+        <div class="ctl-row">
+          <label for="wingRange">Relay wing</label>
+          <input type="range" id="wingRange" min="1" max="15" value="4" step="1">
+          <output id="wingOut">4</output>
+        </div>
+        <div style="height:8px"></div>
+        <select id="relayAirframeSel"></select>
+        <div style="height:8px"></div>
+        <select id="relayRadioSel"></select>
+        <div id="heteroInfo" class="af-info"></div>
+      </div>
+      <div class="ctl-row">
+        <label for="distRange">Target distance</label>
+        <input type="range" id="distRange" min="10" max="220" value="100" step="1">
+        <output id="distOut">—</output>
+      </div>
+      <div class="ctl-row">
+        <label for="altRange">Altitude AGL</label>
+        <input type="range" id="altRange" min="20" max="400" value="50" step="5">
+        <output id="altOut">50 m</output>
+      </div>
+      <div class="ctl-row">
+        <label for="spacingRange">Hop spacing</label>
+        <input type="range" id="spacingRange" min="60" max="110" value="80" step="5">
+        <output id="spacingOut">80%</output>
+      </div>
+      <div id="spacingInfo" class="af-info"></div>
+      <div class="ctl-row">
+        <label for="corridorChk">Corridor routing</label>
+        <input type="checkbox" id="corridorChk" checked style="flex:0 0 auto; width:auto; accent-color:var(--accent);">
+        <output id="corridorOut" style="flex:1; text-align:left; color:var(--dim);">transits follow the chain</output>
+      </div>
+      <div class="ctl-row">
+        <label for="agilityChk">Spectrum agility</label>
+        <input type="checkbox" id="agilityChk" style="flex:0 0 auto; width:auto; accent-color:var(--accent);">
+        <output id="agilityOut" style="flex:1; text-align:left; color:var(--dim);">frequency-hopping anti-jam</output>
+      </div>
+      <div class="ctl-row">
+        <label for="lpiChk">LPI/LPD waveform</label>
+        <input type="checkbox" id="lpiChk" style="flex:0 0 auto; width:auto; accent-color:var(--accent);">
+        <output id="lpiOut" style="flex:1; text-align:left; color:var(--dim);">harder to detect, harder to jam</output>
+      </div>
+      <div class="ctl-row">
+        <label for="videoChk">Video backhaul</label>
+        <input type="checkbox" id="videoChk" style="flex:0 0 auto; width:auto; accent-color:var(--accent);">
+        <output id="videoOut" style="flex:1; text-align:left; color:var(--dim);">payload competes for the chain</output>
+      </div>
+      <div class="ctl-row" id="videoKbpsRow" style="display:none;">
+        <label for="videoKbpsRange">Bitrate</label>
+        <input type="range" id="videoKbpsRange" min="50" max="2000" value="500" step="50">
+        <output id="videoKbpsOut">500 kbps</output>
+      </div>
+      <div class="ctl-row">
+        <label for="terrainSel">Terrain</label>
+        <select id="terrainSel" style="flex:1;">
+          <option value="flat">Flat (no terrain)</option>
+          <option value="rolling">Rolling hills (fractal)</option>
+          <option value="urban">Urban district</option>
+          <option value="mixed">Hills + city</option>
+          <option value="osm">Real area (OpenStreetMap)</option>
+        </select>
+      </div>
+      <div id="osmRow" style="display:none;">
+        <div class="ctl-row">
+          <label for="osmPlace">Place</label>
+          <input type="text" id="osmPlace" placeholder="City name or lat, lon" style="flex:1; background:var(--bg); color:var(--text-2); border:1px solid var(--line); border-radius:2px; padding:6px 8px; font:12px var(--mono);">
+        </div>
+        <div class="ctl-row">
+          <label for="osmRadiusRange">Area radius</label>
+          <input type="range" id="osmRadiusRange" min="400" max="2500" value="1200" step="100">
+          <output id="osmRadiusOut">1.2 km</output>
+        </div>
+        <div class="btn-row">
+          <button id="osmLoadBtn">Load real area</button>
+        </div>
+        <div id="osmNote" class="af-info">Type a real place (<b>Connaught Place Delhi</b>, <b>Shibuya</b>) or paste <b>lat, lon</b> from any map app, then Load. The swarm flies over that place's actual buildings.</div>
+      </div>
+      <div class="ctl-row">
+        <label for="cityDensityRange">Building density</label>
+        <input type="range" id="cityDensityRange" min="0" max="100" value="40" step="1">
+        <output id="cityDensityOut">—</output>
+      </div>
+      <div class="ctl-row">
+        <label for="cityHeightRange">Building height</label>
+        <input type="range" id="cityHeightRange" min="0" max="100" value="40" step="1">
+        <output id="cityHeightOut">—</output>
+      </div>
+      <div id="cityNote" class="af-info" style="display:none;"></div>
+      <div class="ctl-row">
+        <label for="coverageChk">Coverage map</label>
+        <input type="checkbox" id="coverageChk" checked style="flex:0 0 auto; width:auto; accent-color:var(--accent);">
+        <output style="flex:1; text-align:left; color:var(--dim);">C2's measured RF map</output>
+      </div>
+      <div class="ctl-row">
+        <label for="bcastChk">Broadcast C2</label>
+        <input type="checkbox" id="bcastChk" checked style="flex:0 0 auto; width:auto; accent-color:var(--accent);">
+        <output style="flex:1; text-align:left; color:var(--dim);">one flooded order packet</output>
+      </div>
+      <div class="ctl-row">
+        <label for="captureChk">Packet capture</label>
+        <input type="checkbox" id="captureChk" style="flex:0 0 auto; width:auto; accent-color:var(--accent);">
+        <output id="captureOut" style="flex:1; text-align:left; color:var(--dim);">off</output>
+      </div>
+      <div class="btn-row">
+        <button id="exportBtn" disabled>Export capture (.jsonl)</button>
+      </div>
+      <div class="ctl-row">
+        <label for="windSpdRange">Wind</label>
+        <input type="range" id="windSpdRange" min="0" max="15" value="0" step="1">
+        <output id="windSpdOut">0 m/s</output>
+      </div>
+      <div class="ctl-row">
+        <label for="windDirRange">Wind heading</label>
+        <input type="range" id="windDirRange" min="0" max="359" value="90" step="5">
+        <output id="windDirOut">90&deg;</output>
+      </div>
+      <div class="speed-row">
+        <button data-speed="1">1&times;</button>
+        <button data-speed="5">5&times;</button>
+        <button data-speed="30">30&times;</button>
+        <button data-speed="120">120&times;</button>
+        <button data-speed="pause">Pause</button>
+      </div>
+      <div class="btn-row">
+        <button id="killBtn" class="danger" disabled>Kill drone (select one)</button>
+        <button id="resetBtn">Relaunch</button>
+      </div>
+    </section>
+
+    <section>
+      <h2>Interference (RF denial)</h2>
+      <div id="jammerIntro" class="af-info">An interference source jams the radio inside a <b>red circle</b> around it — a jammer, a crowded city, or a broken transmitter. Drones can't hold a link in the red zone, so the swarm avoids or routes around it. Add one, then <b>drag it</b> onto or beside the chain to see what happens.</div>
+      <div class="ctl-row">
+        <label for="advChk">Red-team mode</label>
+        <input type="checkbox" id="advChk" style="flex:0 0 auto; width:auto; accent-color:var(--accent);">
+        <output style="flex:1; text-align:left; color:var(--dim);">sources DF your traffic and hunt it</output>
+      </div>
+      <div class="btn-row">
+        <button id="addJammerBtn">Add RF source</button>
+        <button id="addGpsZoneBtn">Add GPS outage</button>
+        <button id="clearJammersBtn" class="danger" style="display:none;">Clear all</button>
+      </div>
+      <div id="jammerPanel" class="af-info" style="display:none;"></div>
+      <div class="ctl-row" id="jammerPowerRow" style="display:none;">
+        <label for="jammerPowerRange">Strength</label>
+        <input type="range" id="jammerPowerRange" min="0" max="42" value="10" step="1">
+        <output id="jammerPowerOut">10 dBm</output>
+      </div>
+      <div class="btn-row" id="jammerBtnRow" style="display:none;">
+        <button id="jammerToggleBtn">Turn off</button>
+        <button id="jammerRemoveBtn" class="danger">Remove this source</button>
+      </div>
+      <div id="zonePanel" class="af-info" style="display:none;"></div>
+      <div class="btn-row" id="zoneBtnRow" style="display:none;">
+        <button id="zoneToggleBtn">Turn off</button>
+        <button id="zoneRemoveBtn" class="danger">Remove this zone</button>
+      </div>
+    </section>
+
+    <section>
+      <h2>Mission library</h2>
+      <div class="ctl-row">
+        <select id="missionSel" style="flex:1;"></select>
+      </div>
+      <div id="missionBlurb" class="af-info"></div>
+      <div class="btn-row">
+        <button id="loadMissionBtn">Load mission</button>
+      </div>
+    </section>
+
+    <section>
+      <h2>Scenario</h2>
+      <div class="ctl-row">
+        <select id="packSel" style="flex:1;"></select>
+      </div>
+      <div id="packBlurb" class="af-info"></div>
+      <div class="btn-row">
+        <button id="loadPackBtn">Load DDIL scenario</button>
+      </div>
+      <div style="height:6px"></div>
+      <div class="btn-row">
+        <button id="saveScenarioBtn">Save scenario (.json)</button>
+        <button id="loadScenarioBtn">Load scenario</button>
+      </div>
+      <div class="btn-row">
+        <button id="reportBtn">After-action report (.md)</button>
+      </div>
+      <input type="file" id="loadScenarioInput" accept="application/json,.json" style="display:none;">
+    </section>
+
+    <section>
+      <h2>Calibration (sim &harr; real)</h2>
+      <div id="calIntro" class="af-info">Walk two real radios apart logging RSSI vs distance (any CSV: <b>dist</b>,<b>rssi</b> or <b>x</b>,<b>y</b>[,<b>z</b>],<b>rssi</b>). The fit re-derives this simulator's path-loss exponent from YOUR field data and issues a calibrated radio preset + validation report.</div>
+      <div class="ctl-row">
+        <select id="calRadioSel" style="flex:1;"></select>
+      </div>
+      <div class="btn-row">
+        <input type="file" id="calFileInput" accept=".csv,text/csv,text/plain" style="display:none;">
+        <button id="calPickBtn">Choose CSV&hellip;</button>
+        <button id="calFitBtn" disabled>Fit &amp; validate</button>
+      </div>
+      <div id="calResult" class="af-info" style="display:none;"></div>
+      <div class="btn-row" id="calOutRow" style="display:none;">
+        <button id="calReportBtn">Validation report (.md)</button>
+        <button id="calPresetBtn">Calibrated preset (.json)</button>
+      </div>
+    </section>
+
+    <section>
+      <h2>ATAK / TAK</h2>
+      <div class="af-info">Exports the live common operating picture as <b>Cursor-on-Target</b> atoms — the format ATAK already speaks. Set the origin (auto-filled when a real OSM area is loaded), export a snapshot, stream live to a real client via <b>sitl/tak_bridge.py</b>, or drop someone's CoT marks onto the map and use them as objectives.</div>
+      <div class="ctl-row">
+        <label for="takLat">Origin lat</label>
+        <input type="number" id="takLat" value="38.8977000" step="0.0001" style="flex:1; background:var(--bg); color:var(--text-2); border:1px solid var(--line); border-radius:2px; padding:6px 8px; font:12px var(--mono);">
+      </div>
+      <div class="ctl-row">
+        <label for="takLon">Origin lon</label>
+        <input type="number" id="takLon" value="-77.0365000" step="0.0001" style="flex:1; background:var(--bg); color:var(--text-2); border:1px solid var(--line); border-radius:2px; padding:6px 8px; font:12px var(--mono);">
+      </div>
+      <div class="ctl-row">
+        <label for="takHae">Origin HAE</label>
+        <input type="number" id="takHae" placeholder="unknown" step="1" style="flex:1; background:var(--bg); color:var(--text-2); border:1px solid var(--line); border-radius:2px; padding:6px 8px; font:12px var(--mono);">
+        <output style="flex:0 0 auto; color:var(--dim);">m</output>
+      </div>
+      <div class="btn-row">
+        <button id="takExportBtn">Export CoT snapshot (.xml)</button>
+      </div>
+      <div class="btn-row">
+        <input type="file" id="takImportInput" accept=".xml,.cot,.txt,application/xml,text/xml,text/plain" style="display:none;">
+        <button id="takImportBtn">Import CoT marks&hellip;</button>
+        <button id="takClearBtn" class="danger" style="display:none;">Clear marks</button>
+      </div>
+      <div id="takList" class="af-info"></div>
+      <div class="ctl-row">
+        <label for="takWs">Bridge URL</label>
+        <input type="text" id="takWs" value="ws://localhost:8087" style="flex:1; background:var(--bg); color:var(--text-2); border:1px solid var(--line); border-radius:2px; padding:6px 8px; font:12px var(--mono);">
+      </div>
+      <div class="btn-row">
+        <button id="takConnectBtn">Stream to TAK</button>
+      </div>
+      <div id="takStatus" class="af-info">off — use Export for one-shot snapshots</div>
+    </section>
+
+    <section>
+      <h2>External vehicles (SITL)</h2>
+      <div class="ctl-row">
+        <label for="wsUrl">Bridge URL</label>
+        <input type="text" id="wsUrl" value="ws://localhost:8765" style="flex:1; background:var(--bg); color:var(--text-2); border:1px solid var(--line); border-radius:2px; padding:6px 8px; font:12px var(--mono);">
+      </div>
+      <div class="btn-row">
+        <button id="extConnectBtn">Fly via bridge</button>
+      </div>
+      <div id="extStatus" class="af-info">off — drones flown by built-in physics</div>
+    </section>
+
+    <section>
+      <h2>Payload link</h2>
+      <div id="payloadInfo" class="af-info">Video backhaul off — enable it in Mission setup to see who gets to stream, and what it costs the chain.</div>
+    </section>
+
+    <section>
+      <h2>Link chain</h2>
+      <table>
+        <thead><tr><th>Hop</th><th>Dist</th><th>Margin</th><th>Pkt loss</th></tr></thead>
+        <tbody id="hopsBody"></tbody>
+      </table>
+      <div id="chanLine" class="af-info"></div>
+    </section>
+
+    
+    <section>
+      <h2>Disaster PoIs</h2>
+      <div class="btn-row">
+        <button id="addCriticalPoiBtn">Detect New Critical PoI</button>
+      </div>
+      <div id="missionStatusBox" class="af-info" style="margin-top:8px;"></div>
+      <div id="uavFleetMetrics" class="af-info" style="margin-top:4px;"></div>
+      <table style="margin-top:8px;">
+        <thead><tr><th>PoI</th><th>Priority</th><th>UAV</th><th>State</th><th>Prog</th><th>Pkt</th><th>Evidence</th></tr></thead>
+        <tbody id="poisBody"></tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>Fleet</h2>
+      <div id="fleetBody"></div>
+    </section>
+
+    <section>
+      <h2>Event log</h2>
+      <div id="eventLog"></div>
+    </section>
+  </aside>
+</main>
+
+<script src="js/poi.js?v=6"></script>
+<script src="js/radios.js"></script>
+<script src="js/terrain.js"></script>
+<script src="js/osm.js"></script>
+<script src="js/tiles.js"></script>
+<script src="js/airframes.js"></script>
+<script src="js/fleet.js"></script>
+<script src="js/gpsnav.js"></script>
+<script src="js/missions.js"></script>
+<script src="js/scenarios.js"></script>
+<script src="js/calibrate.js"></script>
+<script src="js/tak.js"></script>
+<script src="js/adversary.js"></script>
+<script src="js/net.js"></script>
+<script src="js/swarm.js?v=6"></script>
+<script src="js/render.js?v=6"></script>
+<script src="js/view3d.js"></script>
+<script src="js/external.js"></script>
+<script src="js/main.js?v=6"></script>
+
+</body>
+</html>

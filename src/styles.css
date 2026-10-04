@@ -1,0 +1,130 @@
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:rgba(18,22,26,.84);
+  --border:rgba(255,255,255,.12);
+  --text:#f2f4f6;
+  --muted:#bac2ca;
+  --accent:#3fd27a;
+}
+html,body,#root{height:100%;overflow:hidden;background:#14181c;color:var(--text);
+  font-family:'Barlow',system-ui,-apple-system,sans-serif;-webkit-font-smoothing:antialiased}
+#c{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none;cursor:grab}
+#c:active{cursor:grabbing}
+#c[hidden],.dock[hidden],.info[hidden],.hint[hidden]{display:none !important}
+.view-2d{position:fixed;inset:0;width:100%;height:100%;background:#131410;z-index:2}
+.view-2d[hidden]{display:block !important;visibility:hidden;opacity:0;pointer-events:none;z-index:-1}
+.view-2d-frame{width:100%;height:100%;border:0;display:block;background:#131410}
+.view-toggle{display:flex;align-items:center;gap:6px}
+.view-toggle .chip{flex:1;text-align:center}
+.clock-badge{font:600 12px/1 'IBM Plex Mono',monospace;background:rgba(56,189,248,.14);
+  border:1px solid rgba(56,189,248,.4);color:#38bdf8;padding:6px 8px;border-radius:7px;white-space:nowrap}
+.top.mode-2d{justify-content:center;top:8px}
+.top.mode-2d .controls{padding:5px 8px;border-radius:10px}
+
+.loading{position:fixed;inset:0;display:grid;place-items:center;background:#14181c;
+  font:600 18px/1.4 'Barlow',sans-serif;color:var(--muted);z-index:20;padding:24px;text-align:center}
+
+.card{background:var(--bg);border:1px solid var(--border);border-radius:12px;
+  backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
+  box-shadow:0 8px 28px rgba(0,0,0,.35)}
+
+.top{position:fixed;top:12px;left:12px;right:12px;display:flex;gap:12px;
+  justify-content:space-between;align-items:flex-start;pointer-events:none;z-index:5}
+.top>*{pointer-events:auto}
+.right-stack{display:flex;flex-direction:column;gap:8px;align-items:flex-end;max-width:360px}
+
+.info{max-width:410px;max-height:calc(100vh - 110px);overflow-y:auto;padding:12px 14px;font-size:13.5px;line-height:1.42;scrollbar-width:thin}
+.card-head{display:flex;align-items:center;gap:10px}
+.mode-icon{font-size:26px;line-height:1}
+h1{font:700 21px/1.1 'Barlow Condensed',sans-serif;letter-spacing:.01em}
+.status{font-size:12.5px;color:var(--accent);font-weight:500;margin-top:2px}
+.ghost{margin-left:auto;background:rgba(255,255,255,.07);border:1px solid var(--border);
+  color:var(--text);font:500 12px 'Barlow',sans-serif;padding:5px 10px;border-radius:7px;cursor:pointer}
+.ghost:hover{background:rgba(255,255,255,.13)}
+
+.card-body{margin-top:9px;display:grid;gap:7px;color:var(--muted)}
+.info.collapsed .card-body{display:none}
+.tip{color:var(--text);background:rgba(63,210,122,.1);border-left:3px solid var(--accent);
+  padding:6px 9px;border-radius:4px;font-size:12.5px}
+.legend{list-style:none;display:flex;flex-wrap:wrap;gap:6px 12px;font-size:11.5px;padding-top:2px}
+.legend li{display:flex;align-items:center;gap:5px}
+.sw{width:10px;height:10px;border-radius:50%;display:inline-block}
+.sw.res{background:#4da3ff}
+.sw.team{background:#e6b345}
+.sw.vic{background:#ff3b30;box-shadow:0 0 6px #ff3b30}
+.sw.safe{background:#7fc95e}
+.count{font-size:12.5px;color:var(--text)}
+
+.swarm-sync-box{margin-top:4px;padding-top:8px;border-top:1px solid var(--border);display:grid;gap:6px}
+.swarm-sync-head{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.sync-title{font:700 11px/1 'Barlow Condensed',sans-serif;letter-spacing:.05em;color:#94a3b8}
+.sync-pill{font:600 10.5px/1 'Barlow',sans-serif;padding:3px 7px;border-radius:99px}
+.sync-pill.ok{background:rgba(63,210,122,.18);color:#4ade80;border:1px solid rgba(63,210,122,.4)}
+.sync-pill.warn{background:rgba(245,158,11,.18);color:#fbbf24;border:1px solid rgba(245,158,11,.4)}
+.sync-pill.lost{background:rgba(239,68,68,.18);color:#f87171;border:1px solid rgba(239,68,68,.4)}
+.swarm-kpi-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:5px;font-size:11.5px}
+.swarm-kpi-grid>div{background:rgba(255,255,255,.04);padding:4px 7px;border-radius:6px;display:flex;justify-content:space-between}
+.swarm-kpi-grid b{color:var(--text)}
+.swarm-mini-label{font-size:11px;color:#94a3b8}
+.swarm-pill-list{display:flex;flex-wrap:wrap;gap:4px}
+.mini-pill{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.15);color:var(--text);
+  font:600 10.5px/1 'IBM Plex Mono',monospace;padding:4px 6px;border-radius:5px;cursor:pointer}
+.mini-pill:hover{background:rgba(255,255,255,.14)}
+.mini-pill.selected{outline:2px solid #38bdf8;background:rgba(56,189,248,.22);color:#fff}
+.mini-pill.role-relay{border-color:rgba(230,179,69,.55);color:#fcd34d}
+.mini-pill.role-mission{border-color:rgba(127,201,94,.55);color:#86efac}
+.mini-pill.role-dead{border-color:rgba(224,96,80,.6);color:#fca5a5;text-decoration:line-through;opacity:.7}
+.mini-pill.poi-SURVEYED,.mini-pill.poi-ACKNOWLEDGED{border-color:rgba(34,197,94,.6);color:#86efac}
+.mini-pill.poi-SURVEYING{border-color:rgba(245,158,11,.6);color:#fcd34d}
+
+.controls{padding:10px 12px;display:grid;gap:7px;width:100%}
+.speed-bar{display:flex;align-items:center;gap:5px}
+.speed-lbl{font-size:12px;color:var(--muted);margin-right:auto}
+.speed-chip{padding:4px 8px;min-height:26px;font-size:11.5px}
+.range{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:12.5px;color:var(--muted)}
+.range input{width:130px;accent-color:var(--accent);cursor:pointer}
+.btns{display:flex;flex-wrap:wrap;gap:5px}
+.c2-actions{padding-top:4px;border-top:1px solid var(--border)}
+.action-chip{font-size:11.5px;padding:4px 8px;min-height:28px;border-color:rgba(56,189,248,.35)}
+.danger-chip{background:rgba(239,68,68,.18);border-color:rgba(239,68,68,.5);color:#fca5a5}
+.danger-chip:hover:not(:disabled){background:rgba(239,68,68,.32)}
+.danger-chip:disabled{opacity:.5;cursor:not-allowed}
+.chip{background:rgba(255,255,255,.07);border:1px solid var(--border);color:var(--text);
+  font:500 12.5px 'Barlow',sans-serif;padding:6px 10px;border-radius:8px;cursor:pointer;min-height:32px}
+.chip:hover{background:rgba(255,255,255,.13)}
+.chip[aria-pressed="true"]{background:rgba(63,210,122,.2);border-color:rgba(63,210,122,.55);color:#fff}
+
+.inspector-card{padding:10px 12px;width:100%;font-size:12px}
+.inspector-head{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.role-badge{font:700 10px/1 'IBM Plex Mono',monospace;padding:3px 6px;border-radius:4px;background:rgba(56,189,248,.18);color:#38bdf8}
+.mini-close{padding:2px 6px;font-size:11px}
+.inspector-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:4px 8px;color:var(--muted)}
+.inspector-grid b{color:var(--text)}
+
+.dock{position:fixed;left:12px;right:12px;bottom:28px;display:flex;justify-content:center;
+  pointer-events:none;z-index:5}
+.dock-inner{pointer-events:auto;display:flex;gap:6px;padding:6px;max-width:100%;overflow-x:auto;
+  background:var(--bg);border:1px solid var(--border);border-radius:14px;
+  backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
+  box-shadow:0 8px 28px rgba(0,0,0,.35);scrollbar-width:none}
+.dock-inner::-webkit-scrollbar{display:none}
+.mode-btn{flex:0 0 auto;display:flex;align-items:center;gap:7px;padding:8px 12px;min-height:40px;
+  border-radius:9px;border:1px solid transparent;background:transparent;color:var(--muted);
+  font:600 13.5px 'Barlow',sans-serif;cursor:pointer;white-space:nowrap}
+.mode-btn:hover{color:var(--text);background:rgba(255,255,255,.06)}
+.mode-btn[aria-current="true"]{background:rgba(255,255,255,.14);border-color:rgba(255,255,255,.28);color:#fff}
+.mode-btn .ic{font-size:18px;line-height:1}
+
+.hint{position:fixed;bottom:7px;left:0;right:0;text-align:center;font-size:11.5px;
+  color:rgba(255,255,255,.55);pointer-events:none;z-index:4}
+
+button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+@media (max-width:720px){
+  .top{flex-direction:column;align-items:stretch}
+  .info{max-width:none;max-height:38vh}
+  .right-stack{max-width:none;align-items:stretch}
+  .controls{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between}
+  .hint{display:none}
+  .dock{bottom:10px}
+}
