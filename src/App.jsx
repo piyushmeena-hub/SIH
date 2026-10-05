@@ -41,6 +41,8 @@ export default function App() {
   const [webglError, setWebglError] = useState(null);
   const [modeIndex, setModeIndex] = useState(0);
   const [viewMode, setViewMode] = useState('3d');
+  const viewModeRef = useRef(viewMode);
+  viewModeRef.current = viewMode;
   const [intensity, setIntensity] = useState(1);
   const [autoRotate, setAutoRotate] = useState(() => !window.matchMedia('(prefers-reduced-motion: reduce)').matches);
   const [paused, setPaused] = useState(false);
@@ -96,13 +98,13 @@ export default function App() {
   const handleBoxWidthChange = useCallback((val) => {
     const clamped = Math.max(280, Math.min(800, val));
     setBoxWidth(clamped);
-    try { localStorage.setItem('sim_control_box_width', String(clamped)); } catch {}
+    try { localStorage.setItem('sim_control_box_width', String(clamped)); } catch { /* ignore */ }
   }, []);
 
   const handleBoxScaleChange = useCallback((val) => {
     const clamped = Math.max(0.75, Math.min(1.3, val));
     setBoxScale(clamped);
-    try { localStorage.setItem('sim_control_box_scale', String(clamped)); } catch {}
+    try { localStorage.setItem('sim_control_box_scale', String(clamped)); } catch { /* ignore */ }
   }, []);
 
   const setBoxPreset = useCallback((preset) => {
@@ -112,7 +114,7 @@ export default function App() {
     else if (preset === 'L') w = 520;
     else if (preset === 'XL') w = 640;
     setBoxWidth(w);
-    try { localStorage.setItem('sim_control_box_width', String(w)); } catch {}
+    try { localStorage.setItem('sim_control_box_width', String(w)); } catch { /* ignore */ }
   }, []);
 
   const handleResetBoxSize = useCallback(() => {
@@ -123,7 +125,7 @@ export default function App() {
       localStorage.removeItem('sim_control_box_width');
       localStorage.removeItem('sim_control_box_height');
       localStorage.removeItem('sim_control_box_scale');
-    } catch {}
+    } catch { /* ignore */ }
   }, []);
 
   const handleResizeStart = useCallback((type) => (e) => {
@@ -138,13 +140,13 @@ export default function App() {
         const dx = startX - moveEvent.clientX;
         const newW = Math.max(280, Math.min(Math.min(800, window.innerWidth - 40), startW + dx));
         setBoxWidth(Math.round(newW));
-        try { localStorage.setItem('sim_control_box_width', String(Math.round(newW))); } catch {}
+        try { localStorage.setItem('sim_control_box_width', String(Math.round(newW))); } catch { /* ignore */ }
       }
       if (type === 'bottom' || type === 'corner') {
         const dy = moveEvent.clientY - startY;
         const newH = Math.max(220, Math.min(window.innerHeight - 80, startH + dy));
         setBoxHeight(Math.round(newH));
-        try { localStorage.setItem('sim_control_box_height', String(Math.round(newH))); } catch {}
+        try { localStorage.setItem('sim_control_box_height', String(Math.round(newH))); } catch { /* ignore */ }
       }
     };
 
@@ -188,13 +190,13 @@ export default function App() {
   const handleInfoWidthChange = useCallback((val) => {
     const clamped = Math.max(280, Math.min(850, val));
     setInfoWidth(clamped);
-    try { localStorage.setItem('sim_info_box_width', String(clamped)); } catch {}
+    try { localStorage.setItem('sim_info_box_width', String(clamped)); } catch { /* ignore */ }
   }, []);
 
   const handleInfoScaleChange = useCallback((val) => {
     const clamped = Math.max(0.75, Math.min(1.3, val));
     setInfoScale(clamped);
-    try { localStorage.setItem('sim_info_box_scale', String(clamped)); } catch {}
+    try { localStorage.setItem('sim_info_box_scale', String(clamped)); } catch { /* ignore */ }
   }, []);
 
   const setInfoPreset = useCallback((preset) => {
@@ -204,7 +206,7 @@ export default function App() {
     else if (preset === 'L') w = 540;
     else if (preset === 'XL') w = 680;
     setInfoWidth(w);
-    try { localStorage.setItem('sim_info_box_width', String(w)); } catch {}
+    try { localStorage.setItem('sim_info_box_width', String(w)); } catch { /* ignore */ }
   }, []);
 
   const handleResetInfoSize = useCallback(() => {
@@ -215,7 +217,7 @@ export default function App() {
       localStorage.removeItem('sim_info_box_width');
       localStorage.removeItem('sim_info_box_height');
       localStorage.removeItem('sim_info_box_scale');
-    } catch {}
+    } catch { /* ignore */ }
   }, []);
 
   const handleInfoResizeStart = useCallback((type) => (e) => {
@@ -230,13 +232,13 @@ export default function App() {
         const dx = moveEvent.clientX - startX;
         const newW = Math.max(280, Math.min(Math.min(850, window.innerWidth - 40), startW + dx));
         setInfoWidth(Math.round(newW));
-        try { localStorage.setItem('sim_info_box_width', String(Math.round(newW))); } catch {}
+        try { localStorage.setItem('sim_info_box_width', String(Math.round(newW))); } catch { /* ignore */ }
       }
       if (type === 'bottom' || type === 'corner') {
         const dy = moveEvent.clientY - startY;
         const newH = Math.max(220, Math.min(window.innerHeight - 80, startH + dy));
         setInfoHeight(Math.round(newH));
-        try { localStorage.setItem('sim_info_box_height', String(Math.round(newH))); } catch {}
+        try { localStorage.setItem('sim_info_box_height', String(Math.round(newH))); } catch { /* ignore */ }
       }
     };
 
@@ -423,7 +425,7 @@ export default function App() {
   }, [syncSnapshotNow]);
 
   const handleStatsUpdate = useCallback(next => {
-    setHudStats(prev => (prev.status === next.status && prev.waiting === next.waiting ? prev : next));
+    setHudStats(prev => (prev.status === next.status && prev.waiting === next.waiting && prev.slide === next.slide ? prev : next));
   }, []);
 
   useEffect(() => {
@@ -437,6 +439,7 @@ export default function App() {
         onEarthquakeUpdate: handleEarthquakeUpdate,
       });
       engineRef.current = engine;
+      engine.setViewMode(viewModeRef.current);
       setIsLoading(false);
     } catch (err) {
       setWebglError(err?.message || 'WebGL is unavailable in this browser. Please enable hardware acceleration.');
@@ -578,10 +581,10 @@ export default function App() {
     setDebugOverlayVisible(true);
   }, [testRunning]);
 
-  // Global keybindings for Debug Overlay (D or ~)
+  // Global keybindings for Debug Overlay (~ or Alt+D so WASD 3D camera flight doesn't trigger modal on 'd')
   useEffect(() => {
     const handleKeyDown = (e) => {
-      if (e.key === 'd' || e.key === 'D' || e.key === '`' || e.key === '~') {
+      if (e.key === '`' || e.key === '~' || ((e.key === 'd' || e.key === 'D') && (e.altKey || e.ctrlKey || e.metaKey))) {
         setDebugOverlayVisible(prev => !prev);
       }
     };
@@ -660,6 +663,11 @@ export default function App() {
     engineRef.current?.resetView();
   };
 
+  const handleSlide = action => {
+    const slide = engineRef.current?.landslide(action);
+    if (slide) setHudStats(prev => ({ ...prev, slide }));
+  };
+
   const handleSelectDrone = id => {
     sharedSim.selectDrone(id, '3d');
     const d = sharedSim.state.drones.find(u => u.id === id);
@@ -683,6 +691,23 @@ export default function App() {
     }
   };
 
+  const activeDrones = simSnapshot.drones.filter(d => d.mode !== 'dead');
+  const availableDronePool = activeDrones.length > 0 ? activeDrones : simSnapshot.drones;
+  const availableDronesCount = availableDronePool.length;
+
+  const handleCycleDrone = (direction = 1) => {
+    if (availableDronesCount <= 0) return;
+    const currIdx = availableDronePool.findIndex(d => d.id === simSnapshot.selectedDroneId);
+    let nextIdx = 0;
+    if (currIdx !== -1) {
+      nextIdx = (currIdx + direction + availableDronesCount) % availableDronesCount;
+    }
+    const targetDrone = availableDronePool[nextIdx];
+    if (targetDrone) {
+      handleSelectDrone(targetDrone.id);
+    }
+  };
+
   const currentMode = MODES_META[modeIndex] || MODES_META[0];
   const is3D = viewMode === '3d';
 
@@ -693,7 +718,6 @@ export default function App() {
     ? simSnapshot.pois.find(p => p.id === simSnapshot.selectedPoiId) || null
     : null;
 
-  const surveyedPoisCount = simSnapshot.pois.filter(p => p.status === 'SURVEYED' || p.status === 'ACKNOWLEDGED').length;
   const detectedSurvivorsCount = simSnapshot.survivors.filter(s => s.detected).length;
 
   return (
@@ -1142,7 +1166,20 @@ export default function App() {
               )}
 
               {/* Drone & PoI quick select pills */}
-              <div className="swarm-mini-label" style={{ marginTop: '4px' }}>Select Drone / Target:</div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px' }}>
+                <div className="swarm-mini-label">Select Drone / Target:</div>
+                <button
+                  type="button"
+                  className="mini-pill"
+                  id="btnCycleDroneQuick"
+                  disabled={availableDronesCount === 0}
+                  onClick={() => handleCycleDrone(1)}
+                  title={availableDronesCount === 0 ? 'No UAVs available' : 'Cycle to next UAV'}
+                  style={{ fontSize: '0.7rem', padding: '1px 6px' }}
+                >
+                  Next UAV →
+                </button>
+              </div>
               <div className="swarm-pill-list" id="dronePillList">
                 {simSnapshot.drones.map(d => (
                   <button
@@ -1153,6 +1190,17 @@ export default function App() {
                     title={`${d.id} (${d.fsm || d.role}) · ${Math.round(d.battery)}%`}
                   >
                     UAV_{d.id}
+                  </button>
+                ))}
+                {(simSnapshot.pois || []).map(p => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    className={`mini-pill poi-${(p.status || 'critical').toLowerCase()}${simSnapshot.selectedPoiId === p.id ? ' selected' : ''}`}
+                    onClick={() => handleSelectPoi(p.id)}
+                    title={`${p.id} (${p.status || 'CRITICAL'})`}
+                  >
+                    {p.id}
                   </button>
                 ))}
               </div>
@@ -1492,6 +1540,20 @@ export default function App() {
                     Reset view
                   </button>
                 </div>
+                {currentMode.id === 'landslide' && (
+                  <div className="hazard-card">
+                    <button
+                      className="hazard-btn"
+                      type="button"
+                      id="bSlide"
+                      aria-pressed={hudStats.slide === 'running'}
+                      onClick={() => handleSlide(hudStats.slide === 'running' ? 'stop' : 'start')}
+                    >
+                      <span className="hazard-dot" aria-hidden="true" />
+                      {hudStats.slide === 'running' ? 'Stop Landslide' : 'Start Landslide'}
+                    </button>
+                  </div>
+                )}
                 <div className="btns c2-actions">
                   <button
                     className="chip action-chip"
@@ -1565,12 +1627,34 @@ export default function App() {
               {selectedDrone && (
                 <div className="inspector-block" id="droneInspector">
                   <div className="inspector-head">
+                    <button
+                      type="button"
+                      className="mini-nav-btn"
+                      title="Previous UAV"
+                      disabled={availableDronesCount <= 1}
+                      onClick={() => handleCycleDrone(-1)}
+                      aria-label="Previous UAV"
+                    >
+                      ‹
+                    </button>
                     <strong>UAV {selectedDrone.id}</strong>
+                    <button
+                      type="button"
+                      className="mini-nav-btn"
+                      title="Next UAV"
+                      disabled={availableDronesCount <= 1}
+                      onClick={() => handleCycleDrone(1)}
+                      aria-label="Next UAV"
+                    >
+                      ›
+                    </button>
                     <span className={`role-badge role-${selectedDrone.role}`}>{selectedDrone.role.toUpperCase()}</span>
                     <button
                       type="button"
                       className="ghost mini-close"
                       onClick={() => sharedSim.selectDrone(null, '3d')}
+                      title="Close"
+                      aria-label="Close"
                     >
                       ✕
                     </button>
@@ -1592,6 +1676,16 @@ export default function App() {
                       onClick={() => engineRef.current?.focusPosition(selectedDrone.position.x, selectedDrone.position.y, selectedDrone.position.z)}
                     >
                       Focus Camera
+                    </button>
+                    <button
+                      type="button"
+                      className="chip"
+                      id="btnNextDrone3D"
+                      disabled={availableDronesCount <= 1}
+                      onClick={() => handleCycleDrone(1)}
+                      title={availableDronesCount <= 1 ? 'Only 1 UAV available' : 'Cycle to next active UAV'}
+                    >
+                      Next UAV →
                     </button>
                     <button
                       type="button"
@@ -1651,7 +1745,7 @@ export default function App() {
       </nav>
 
       <p className="hint" hidden={!is3D}>
-        Drag to orbit · Scroll to zoom · Click any Drone or Survivor/PoI in 3D · Press 1–7 to switch disasters · Press [D] for Diagnostics
+        Drag to look/orbit · WASD / Arrows to fly 3D · Space / Shift for altitude · Scroll / +/- to zoom · Click Drone/PoI · Press 1–7 for disasters · Press [~] for Diagnostics
       </p>
 
       {/* SECTION I: Debug Overlay Modal & Automated Check Suite */}

@@ -79,7 +79,7 @@ class BackendBridge {
         try {
           const frame = JSON.parse(event.data);
           this.handleTelemetryFrame(frame);
-        } catch (e) {
+        } catch {
           // Ignore occasional JSON parse errors on truncated sockets
         }
       };
@@ -100,7 +100,7 @@ class BackendBridge {
         this.reconnectAttempts++;
         this.reconnectTimer = setTimeout(() => this.connect(), delay);
       };
-    } catch (err) {
+    } catch {
       this.connecting = false;
       this.reconnectTimer = setTimeout(() => this.connect(), 2500);
     }
@@ -141,7 +141,7 @@ class BackendBridge {
             sharedSim.setOctomapVoxels(data.voxels, data.res || 1.0);
           }
         }
-      } catch (err) {
+      } catch {
         // Backend busy or offline
       }
     }, 2000);
@@ -154,7 +154,7 @@ class BackendBridge {
       try {
         this.ws.send(JSON.stringify(payload));
         return { success: true, transport: 'ws' };
-      } catch (e) {
+      } catch {
         // Fall back to REST
       }
     }
