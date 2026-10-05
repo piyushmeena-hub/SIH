@@ -998,15 +998,6 @@
   el('calPresetBtn').addEventListener('click', () => {
     if (calPresetJson) download(calPresetJson, 'radio-preset-calibrated.json', 'application/json');
   });
-  function getSharedSim() {
-    try {
-      if (window.parent && window.parent !== window && window.parent.__SHARED_SIM__) {
-        return window.parent.__SHARED_SIM__;
-      }
-    } catch (_) { /* ignore */ }
-    return window.__SHARED_SIM__ || null;
-  }
-
   speedBtns.forEach(b => b.addEventListener('click', () => {
     const v = b.dataset.speed;
     if (v === 'pause') { paused = !paused; b.textContent = paused ? 'Resume' : 'Pause'; }
@@ -1014,24 +1005,9 @@
     // Highlight the button matching the current speed — pause/resume must not
     // clear it, since timeScale is unchanged across a pause.
     speedBtns.forEach(x => x.classList.toggle('active', x.dataset.speed === String(timeScale)));
-    const shared = getSharedSim();
-    if (shared) {
-      shared.setTimeScale(timeScale, '2d');
-      shared.setPaused(paused, '2d');
-    }
   }));
   killBtn.addEventListener('click', () => {
-    if (selected && alive(selected)) {
-      killDrone(swarm, selected);
-      if (selected.poiId && typeof PoiStore !== 'undefined') {
-        PoiStore.unassign(selected.poiId, 'UAV failure', swarm.time, swarm);
-        selected.poiId = null;
-      }
-      const shared = getSharedSim();
-      if (shared && shared.events) {
-        shared.logSync(`Drone ${selected.id} killed by operator in 2D C2`, { droneId: selected.id });
-      }
-    }
+    if (selected && alive(selected)) { killDrone(swarm, selected); }
   });
   resetBtn.addEventListener('click', () => {
     osmLoadToken++; // a manual relaunch abandons any in-flight area fetch (finding #8)
@@ -1160,32 +1136,17 @@
   // --- 3D view ----------------------------------------------------------------
   let view3D = false;
   let cam3D = null;
-
-  function createNewCriticalPoi(opts = {}) {
-    if (!swarm) return null;
-    const existingCount = swarm.pois ? swarm.pois.filter(p => !p.isSurvivor).length : 5;
-    const pId = opts.id || ("POI-" + String.fromCharCode(65 + existingCount));
-    const px = opts.x != null ? opts.x : (swarm.base.x + 380 + Math.random() * 190);
-    const py = opts.y != null ? opts.y : (swarm.base.y - 40 - Math.random() * 150);
-    const label = opts.label || "New Crisis Site";
-    const newPoi = createPoI(pId, label, px, py, opts.priority || "CRITICAL", 45, 10);
+  const btnPoi = document.getElementById("addCriticalPoiBtn");
+  if (btnPoi) btnPoi.addEventListener("click", () => {
+    if (!swarm) return;
+    const pId = "POI-" + String.fromCharCode(65 + (swarm.pois ? swarm.pois.length : 5));
+    const newPoi = createPoI(pId, "New Crisis Site", swarm.base.x + 400 + Math.random()*200, swarm.base.y - 50 - Math.random()*150, "CRITICAL", 45, 10);
     if (typeof PoiStore !== "undefined") {
       PoiStore.addPoi(newPoi);
     } else if (swarm.pois) {
       swarm.pois.push(newPoi);
     }
-    swarm.missionComplete = false;
     logEvent(swarm, `T+${Math.floor(swarm.time)} New critical ${pId} detected.`, "warn");
-    return newPoi;
-  }
-
-  const btnPoi = document.getElementById("addCriticalPoiBtn");
-  if (btnPoi) btnPoi.addEventListener("click", () => {
-    const created = createNewCriticalPoi();
-    const shared = getSharedSim();
-    if (shared && created) {
-      shared.logSync(`New critical PoI ${created.id} created in 2D C2`, { poi: created });
-    }
   });
 
   viewBtn.addEventListener('click', () => {
@@ -1215,6 +1176,7 @@
       try { cv.setPointerCapture(e.pointerId); } catch (_) { /* pointer already gone */ }
       return;
     }
+    const w = screenToWorld(view, cv, p.x, p.y);
     // Interference source hit test first (they're draggable, like the target)
     let jHit = null;
     for (const j of swarm.jammers) {
@@ -1243,33 +1205,8 @@
         const s = worldToScreen(view, cv, d.x, d.y);
         if (Math.hypot(p.x - s.x, p.y - s.y) < 14 * hitU) { hit = d; break; }
       }
-      // PoI hit test (screen space)
-      let poiHit = null;
-      if (!hit && swarm.pois) {
-        for (const poi of swarm.pois) {
-          const ps = worldToScreen(view, cv, poi.x, poi.y);
-          if (Math.hypot(p.x - ps.x, p.y - ps.y) < 15 * hitU) { poiHit = poi; break; }
-        }
-      }
-      const shared = getSharedSim();
-      if (hit) {
-        selected = hit;
-        dragMode = null;
-        if (shared) shared.selectDrone(hit.id, '2d');
-      } else if (poiHit) {
-        if (typeof PoiStore !== 'undefined') PoiStore.selectedPoiId = poiHit.id;
-        if (poiHit.assignedUavId) {
-          const assignedDrone = swarm.drones.find(d => d.id === poiHit.assignedUavId);
-          if (assignedDrone) selected = assignedDrone;
-        }
-        dragMode = null;
-        if (shared) {
-          shared.selectPoi(poiHit.id, '2d');
-          if (selected) shared.selectDrone(selected.id, '2d');
-        }
-      } else {
-        dragMode = 'pan';
-      }
+      if (hit) { selected = hit; dragMode = null; }
+      else dragMode = 'pan';
     }
     lastMouse = p;
     cv.setPointerCapture(e.pointerId);
@@ -1387,6 +1324,8 @@
       statusPill.textContent = 'Connected — ' + status.hops.length + ' hop' + (status.hops.length > 1 ? 's' : '');
       statusPill.className = 'pill ok';
     } else if (status.fleetConnected) {
+      // Fleet is linked but nobody is on station yet — say so, don't claim
+      // the objective link exists before it does (finding #6).
       statusPill.textContent = 'Linked — en route to objective';
       statusPill.className = 'pill warn';
     } else if (status.freshCount > 0) {
@@ -1397,6 +1336,9 @@
       statusPill.className = 'pill lost';
     }
 
+    // O7: assign innerHTML only when the rendered string actually changed —
+    // re-parsing identical panels at 5 Hz was pure layout churn (a 100-row
+    // fleet list is the panel path's dominant cost).
     const hopsHtml = status.hops.map((h, i) =>
       '<tr class="' + escHtml(h.state) + '"><td>' + escHtml(h.a.label) + ' → ' + escHtml(h.b.label) + '</td><td>' + fmtDist(h.distM) +
       '</td><td>' + h.marginDb.toFixed(0) + ' dB</td><td>' + (h.lossPct < 1 ? '<1' : h.lossPct.toFixed(0)) + '%</td></tr>'
@@ -1413,7 +1355,10 @@
         '<span class="fbat"><span class="fbat-fill" style="width:' + d.batteryPct.toFixed(0) + '%"></span></span>' +
         '<span class="fpct">' + d.batteryPct.toFixed(0) + '%</span></div>';
     }).join('');
-    if (fleetHtml !== lastFleetHtml) { fleetBody.innerHTML = fleetHtml; lastFleetHtml = fleetHtml; }
+        if (fleetHtml !== lastFleetHtml) { fleetBody.innerHTML = fleetHtml; lastFleetHtml = fleetHtml; }
+
+
+
 
     const evHtml = swarm.events.slice().reverse().map(ev =>
       '<div class="ev ev-' + escHtml(ev.kind) + '"><span class="ev-t">' + fmtSimClock(ev.t) + '</span>' + escHtml(ev.msg) + '</div>'
@@ -1435,275 +1380,34 @@
 
     killBtn.disabled = !(selected && alive(selected));
     killBtn.textContent = selected ? 'Kill ' + selected.id : 'Kill drone (select one)';
+    // Basemap credit is legally required whenever the real map is on screen —
+    // and it now shows in BOTH views (3D drapes the tiles onto the ground).
     mapAttrib.style.display = swarm.terrain.geoAnchor ? 'block' : 'none';
   }
 
   const mapAttrib = el('mapAttrib');
   fleetBody.addEventListener('click', e => {
     const row = e.target.closest('.fleet-row');
-    if (row) {
-      selected = swarm.drones.find(d => d.id === row.dataset.id) || null;
-      const shared = getSharedSim();
-      if (shared && selected) shared.selectDrone(selected.id, '2d');
-    }
+    if (row) selected = swarm.drones.find(d => d.id === row.dataset.id) || null;
   });
-
-  const poisBodyEl = el('poisBody');
-  if (poisBodyEl) {
-    poisBodyEl.addEventListener('click', e => {
-      const row = e.target.closest('.poi-row');
-      if (!row) return;
-      const poiId = row.dataset.poiId;
-      if (typeof PoiStore !== 'undefined') {
-        PoiStore.selectedPoiId = poiId;
-        const p = PoiStore.get(poiId);
-        if (p && p.assignedUavId) {
-          const uav = swarm.drones.find(d => d.id === p.assignedUavId);
-          if (uav) selected = uav;
-        }
-      }
-      const shared = getSharedSim();
-      if (shared) {
-        shared.selectPoi(poiId, '2d');
-        if (selected) shared.selectDrone(selected.id, '2d');
-      }
-    });
-  }
-
-  // --- Shared Simulation Bridge (2D Authoritative -> SharedStore) -----------
-  function syncToSharedStore(status) {
-    const shared = getSharedSim();
-    if (!shared || !swarm) return;
-    const nodeIds = new Set((status && status.nodes ? status.nodes : []).map(n => n.label));
-    const effKbps = status
-      ? chainThroughputKbps(radio, status.hops.length) * Math.max(0, 1 - swarm.net.utilization) * (radio.dutyCycle ?? 1)
-      : 0;
-    const avgLoss = status && status.hops && status.hops.length
-      ? status.hops.reduce((acc, h) => acc + (h.lossPct || 0), 0) / status.hops.length
-      : 0;
-
-    shared.sync2DSwarmToStore({
-      time: swarm.time,
-      timeScale,
-      paused,
-      altitudeM: swarm.altitudeM,
-      target: swarm.target,
-      selectedDroneId: selected ? selected.id : null,
-      drones: swarm.drones.map(d => {
-        const er = effRole(d);
-        let commStatus = 'CONNECTED';
-        if (d.mode === 'dead') commStatus = 'DOWN';
-        else if (er === 'relink') commStatus = 'RELINKING';
-        else if (swarm.c2 && swarm.c2.lost && swarm.c2.lost[d.id]) commStatus = 'LOST';
-        else if (!nodeIds.has(d.id) && d.mode === 'fly') commStatus = 'DEGRADED';
-        return {
-          id: d.id,
-          x: d.x,
-          y: d.y,
-          vx: d.vx,
-          vy: d.vy,
-          role: d.role,
-          effRole: er,
-          cls: d.cls,
-          mode: d.mode,
-          batteryPct: d.batteryPct,
-          poiId: d.poiId || null,
-          commStatus,
-          gpsDenied: !!d.gpsDenied,
-          driftM: d.estX != null ? Math.hypot(d.estX - d.x, d.estY - d.y) : 0,
-        };
-      }),
-      pois: (typeof PoiStore !== 'undefined' ? PoiStore.getAll() : (swarm.pois || [])).map(p => ({
-        id: p.id,
-        type: p.type || p.name || 'Crisis Site',
-        x: p.x,
-        y: p.y,
-        priority: p.priority,
-        state: p.state,
-        assignedUavId: p.assignedUavId || null,
-        progress: p.progress || 0,
-        isSurvivor: !!p.isSurvivor,
-        survivorId: p.survivorId || null,
-      })),
-      network: {
-        baseX: swarm.base.x,
-        baseY: swarm.base.y,
-        hops: status ? status.hops : [],
-        connected: status ? status.connected : false,
-        fleetConnected: status ? status.fleetConnected : false,
-        aliveCount: status ? status.aliveCount : 0,
-        freshCount: status ? status.freshCount : 0,
-        relayCount: status ? status.relayCount : 0,
-        missionCount: status ? status.missionCount : 0,
-        delivered: swarm.net.delivered,
-        utilization: swarm.net.utilization,
-        throughputKbps: effKbps,
-        packetLoss: avgLoss,
-      },
-      jammers: (swarm.jammers || []).map(j => ({
-        id: j.id,
-        x: j.x,
-        y: j.y,
-        erpDbm: j.erpDbm,
-        on: j.on !== false,
-        denialRadiusM: jammerDenialRadiusM(swarm, j),
-      })),
-      gpsZones: (swarm.gpsZones || []).map(z => ({
-        id: z.id,
-        x: z.x,
-        y: z.y,
-        rM: z.rM,
-        on: z.on !== false,
-      })),
-    });
-  }
-
-  let _lastSyncedDisaster = null;
-  let _lastSyncedIntensity = null;
-
-  const ctrl2D = {
-    setPaused(nextPaused) {
-      paused = !!nextPaused;
-      const pBtn = document.querySelector('[data-speed="pause"]');
-      if (pBtn) pBtn.textContent = paused ? 'Resume' : 'Pause';
-    },
-    setTimeScale(nextScale) {
-      timeScale = Number(nextScale) || 5;
-      paused = false;
-      const pBtn = document.querySelector('[data-speed="pause"]');
-      if (pBtn) pBtn.textContent = 'Pause';
-      speedBtns.forEach(x => x.classList.toggle('active', x.dataset.speed === String(timeScale)));
-    },
-    selectDrone(droneId) {
-      selected = droneId ? (swarm.drones.find(d => d.id === droneId) || null) : null;
-    },
-    selectPoi(poiId) {
-      if (typeof PoiStore !== 'undefined') {
-        PoiStore.selectedPoiId = poiId || null;
-      }
-    },
-    killDrone(droneId) {
-      const target = droneId ? swarm.drones.find(d => d.id === droneId) : selected;
-      if (!target || !alive(target)) return false;
-      killDrone(swarm, target);
-      if (target.poiId && typeof PoiStore !== 'undefined') {
-        PoiStore.unassign(target.poiId, 'UAV failure', swarm.time, swarm);
-        target.poiId = null;
-      }
-      return true;
-    },
-    addCriticalPoi(opts = {}) {
-      return createNewCriticalPoi(opts);
-    },
-    addJammer(opts = {}) {
-      addJammerBtn.click();
-      return swarm.jammers[swarm.jammers.length - 1] || null;
-    },
-    addGpsZone(opts = {}) {
-      addGpsZoneBtn.click();
-      return swarm.gpsZones[swarm.gpsZones.length - 1] || null;
-    },
-    applySharedEnvironment({ mission, world, survivors, selection }) {
-      if (!swarm) return;
-      if (mission) {
-        if (typeof mission.timeScale === 'number' && mission.timeScale !== timeScale) {
-          ctrl2D.setTimeScale(mission.timeScale);
-        }
-        if (typeof mission.paused === 'boolean' && mission.paused !== paused) {
-          ctrl2D.setPaused(mission.paused);
-        }
-        // Apply disaster-specific wind & RF environment scaling without resetting the mission
-        const dType = mission.disasterType || 'earthquake';
-        const inten = Number(mission.intensity || 1.0);
-        const disasterWindMap = {
-          earthquake: { spd: 3.0, dirDeg: 25, envMul: 0.96 },
-          flood:      { spd: 5.5, dirDeg: 110, envMul: 0.92 },
-          wildfire:   { spd: 7.5, dirDeg: 40, envMul: 0.86 },
-          tornado:    { spd: 12.0, dirDeg: 145, envMul: 0.78 },
-          volcano:    { spd: 5.0, dirDeg: 75, envMul: 0.84 },
-          tsunami:    { spd: 6.5, dirDeg: 90, envMul: 0.90 },
-          landslide:  { spd: 4.0, dirDeg: 60, envMul: 0.94 },
-        };
-        const cfg = disasterWindMap[dType] || disasterWindMap.earthquake;
-        const effWindSpd = Math.min(20, Math.round(cfg.spd * (0.65 + 0.45 * inten)));
-        const rad = cfg.dirDeg * Math.PI / 180;
-        swarm.wind.x = effWindSpd * Math.cos(rad);
-        swarm.wind.y = effWindSpd * Math.sin(rad);
-        if (windSpdRange) windSpdRange.value = String(effWindSpd);
-        if (windDirRange) windDirRange.value = String(cfg.dirDeg);
-        if (windSpdOut) windSpdOut.textContent = effWindSpd + ' m/s';
-        if (windDirOut) windDirOut.textContent = cfg.dirDeg + '°';
-
-        const baseEnvFactor = env ? env.factor : 0.75;
-        const atten = Math.max(0.50, cfg.envMul - (inten - 1.0) * 0.08);
-        swarm.envFactor = baseEnvFactor * atten;
-        updateSpecCard();
-
-        if (_lastSyncedDisaster !== dType || (_lastSyncedIntensity !== null && Math.abs(_lastSyncedIntensity - inten) > 0.05)) {
-          logEvent(swarm, `3D World Sync: ${dType.toUpperCase()} (${inten.toFixed(1)}x) · wind ${effWindSpd} m/s`, 'info');
-          _lastSyncedDisaster = dType;
-          _lastSyncedIntensity = inten;
-        }
-      }
-
-      if (world) {
-        if (Array.isArray(world.buildings) && world.buildings.length > 0 && terrainSel.value !== 'osm') {
-          swarm.terrain.buildings = world.buildings.map(b => ({
-            x: b.x,
-            y: b.y,
-            w: b.w,
-            d: b.d,
-            heightM: b.heightM,
-          }));
-          if (typeof indexBuildings === 'function') {
-            indexBuildings(swarm.terrain);
-          }
-          if (typeof updateCityLabels === 'function') updateCityLabels();
-        }
-        swarm.hazardZones = world.hazardZones || [];
-      }
-
-      if (Array.isArray(survivors) && typeof PoiStore !== 'undefined') {
-        PoiStore.syncSurvivors(survivors, swarm);
-      }
-
-      if (selection) {
-        if (selection.selectedDroneId !== undefined) {
-          ctrl2D.selectDrone(selection.selectedDroneId);
-        }
-        if (selection.selectedPoiId !== undefined) {
-          ctrl2D.selectPoi(selection.selectedPoiId);
-        }
-      }
-    },
-  };
-
-  function connectSharedController() {
-    const shared = getSharedSim();
-    if (shared && shared.ctrl2D !== ctrl2D) {
-      shared.register2DController(ctrl2D);
-    }
-  }
 
   // --- Loop -------------------------------------------------------------------
   function resize() {
     const r = cv.parentElement.getBoundingClientRect();
+    // Back the canvas at native device resolution (capped at 3×) so phones get
+    // a crisp image instead of an upscaled blur. All fixed screen-px drawing
+    // (fonts, line widths, markers) multiplies by window.uiScale to stay the
+    // same physical size; world content scales through fitView/pxPerM.
     const dpr = Math.min(3, Math.max(1, window.devicePixelRatio || 1));
     window.uiScale = dpr;
     if (r.width > 0 && r.height > 0) {
       cv.width = Math.floor(r.width * dpr);
       cv.height = Math.floor(r.height * dpr);
-      if (swarm && !viewFitted) fitView();
+      if (swarm && !viewFitted) fitView(); // first real layout after a hidden/zero-size load
     }
   }
   window.addEventListener('resize', resize);
   new ResizeObserver(resize).observe(cv.parentElement);
-
-  let lastT = performance.now();
-  let panelAccum = 0;
-  let simAccum = 0;
-  let hostActive = true;
-  const FIXED_SIM_STEP_SEC = SIM_DT_SEC; // ONE step policy across browser/batch/bench (finding #28)
 
   const backTo3DBtn = el('backTo3DModelBtn');
   if (backTo3DBtn) {
@@ -1713,6 +1417,7 @@
       }
     });
   }
+  let hostActive = true;
   window.addEventListener('message', e => {
     if (e.data && e.data.type === 'SET_2D_ACTIVE') {
       hostActive = !!e.data.active;
@@ -1724,18 +1429,23 @@
     }
   });
 
+  let lastT = performance.now();
+  let panelAccum = 0;
+  let simAccum = 0;
+  const FIXED_SIM_STEP_SEC = SIM_DT_SEC; // ONE step policy across browser/batch/bench (finding #28)
   function frame(now) {
-    requestAnimationFrame(frame);
-    if (document.hidden) {
+    if (!hostActive || document.hidden) {
       lastT = now;
+      requestAnimationFrame(frame);
       return;
     }
-    connectSharedController();
     const realDt = Math.min(0.2, (now - lastT) / 1000);
     lastT = now;
 
     let status;
     if (!paused) {
+      // Real vehicles fly in real time — no fast-forward when a bridge is
+      // driving the drones; force 1x so sim time tracks the wall clock.
       const scale = (typeof externalActive === 'function' && externalActive()) ? 1 : timeScale;
       simAccum += realDt * scale;
       if (simAccum > 1.0) simAccum = 1.0;
@@ -1746,25 +1456,17 @@
     }
     if (!status) status = chainStatus(swarm);
 
-    // Draw 2D canvas when visible; when user is in 3D view, keep map-render state synced for PoiStore consistency
-    if (hostActive && cv.width > 0 && cv.height > 0) {
-      if (view3D) renderView3D(ctx, cv, swarm, status, cam3D, selected);
-      else render(ctx, cv, view, swarm, status, selected, usable());
-    } else if (typeof PoiStore !== 'undefined' && swarm.pois) {
-      for (const poi of swarm.pois) {
-        PoiStore.recordMapRender(poi.id, poi.state, poi.assignedUavId, Math.floor(poi.progress));
-      }
-    }
+    if (view3D) renderView3D(ctx, cv, swarm, status, cam3D, selected);
+    else render(ctx, cv, view, swarm, status, selected, usable());
 
     if (typeof PoiStore !== "undefined") {
       PoiStore.syncUi(swarm);
     }
 
-    // Publish authoritative 2D swarm state to SharedSimulationStore every frame
-    syncToSharedStore(status);
-
     panelAccum += realDt;
     if (panelAccum > 0.2) { updatePanels(status); panelAccum = 0; }
+
+    requestAnimationFrame(frame);
   }
 
   // Debug/inspection handle (also handy from the devtools console)
@@ -1772,8 +1474,7 @@
     get swarm() { return swarm; },
     get radio() { return radio; },
     view,
-    ctrl2D,
-    setTimeScale(v) { ctrl2D.setTimeScale(v); },
+    setTimeScale(v) { timeScale = v; },
   };
 
   // --- Boot -------------------------------------------------------------------
@@ -1789,7 +1490,6 @@
   applyLpi();
   applyVideo();
   resetSwarm();
-  connectSharedController();
   distOut.textContent = fmtDist(+distRange.value / 100 * defaultTargetDist());
   document.querySelector('[data-speed="5"]').classList.add('active');
   requestAnimationFrame(frame);

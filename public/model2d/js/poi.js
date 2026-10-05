@@ -15,7 +15,6 @@ function createPoI(id, name, x, y, priority, surveyRadius = 45, surveyDuration =
   return {
     id,
     name,
-    type: name,
     x,
     y,
     priority,
@@ -27,17 +26,13 @@ function createPoI(id, name, x, y, priority, surveyRadius = 45, surveyDuration =
     packetId: null,
     packetStatus: 'NOT_CREATED',
     evidence: null,
-    route: null,
-    isSurvivor: false,
-    survivorId: null
+    route: null
   };
 }
 
 class CanonicalPoiStore {
   constructor() {
     this.pois = [];
-    this.lastSurvivors = [];
-    this.selectedPoiId = null;
     this.lastRenderedState = new Map();
     this.lastTableState = new Map();
     this.desyncCount = 0;
@@ -55,49 +50,8 @@ class CanonicalPoiStore {
         createPoI("POI-E", "Park Area", 590, -190, "LOW", 45, 12)
       ];
     }
-    if (this.lastSurvivors && this.lastSurvivors.length > 0) {
-      this.syncSurvivors(this.lastSurvivors);
-    }
     this.lastRenderedState.clear();
     this.lastTableState.clear();
-    return this.pois;
-  }
-
-  syncSurvivors(survivorsList = [], swarm = null) {
-    this.lastSurvivors = survivorsList;
-    const incomingIds = new Set(survivorsList.map(s => s.id));
-    // Remove survivor PoIs that belong to an older disaster scatter
-    for (let i = this.pois.length - 1; i >= 0; i--) {
-      const p = this.pois[i];
-      if (p.isSurvivor && !incomingIds.has(p.id)) {
-        if (swarm && swarm.drones && p.assignedUavId) {
-          const d = swarm.drones.find(u => u.id === p.assignedUavId);
-          if (d && d.poiId === p.id) d.poiId = null;
-        }
-        this.pois.splice(i, 1);
-      }
-    }
-    // Add or update incoming 3D survivors as rescue PoIs
-    for (const s of survivorsList) {
-      const x2d = s.position2D ? s.position2D.x : (s.x || 320);
-      const y2d = s.position2D ? s.position2D.y : (s.y || -90);
-      let existing = this.get(s.id);
-      if (existing) {
-        existing.x = x2d;
-        existing.y = y2d;
-        existing.isSurvivor = true;
-        existing.survivorId = s.id;
-      } else {
-        const sp = createPoI(s.id, "Survivor Signal", x2d, y2d, "CRITICAL", 45, 9);
-        sp.isSurvivor = true;
-        sp.survivorId = s.id;
-        this.pois.push(sp);
-      }
-    }
-    if (swarm) {
-      swarm.pois = this.pois;
-      swarm.missionComplete = false;
-    }
     return this.pois;
   }
 
@@ -218,14 +172,11 @@ class CanonicalPoiStore {
         progress: Math.floor(p.progress)
       });
 
-      const selStyle = this.selectedPoiId === p.id ? ' style="outline:1px solid #38bdf8; background:rgba(56,189,248,0.12); cursor:pointer;"' : ' style="cursor:pointer;"';
-      h += `<tr class="poi-row" data-poi-id="${p.id}"${selStyle}><td><b>${p.id}</b></td><td>${p.priority}</td><td>${p.assignedUavId || '-'}</td><td><span class="poi-tag state-${p.state}">${p.state}</span></td><td>${Math.floor(p.progress)}%</td><td>${p.packetId || '-'}</td><td style="font-size:10px">${p.evidence || '-'}</td></tr>`;
+      const badgeClass = p.state === 'SURVEYED' ? 'badge-ok' : (p.state === 'SURVEYING' ? 'badge-warn' : 'badge-dim');
+      h += `<tr><td><b>${p.id}</b></td><td>${p.priority}</td><td>${p.assignedUavId || '-'}</td><td><span class="poi-tag state-${p.state}">${p.state}</span></td><td>${Math.floor(p.progress)}%</td><td>${p.packetId || '-'}</td><td style="font-size:10px">${p.evidence || '-'}</td></tr>`;
     }
 
-    if (this._lastPoisHtml !== h) {
-      body.innerHTML = h;
-      this._lastPoisHtml = h;
-    }
+    body.innerHTML = h;
 
     // Mission status calculation
     const totalPois = this.pois.length;

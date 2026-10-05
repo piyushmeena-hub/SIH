@@ -22,7 +22,6 @@ const SCENARIO_PACK = [
       count: 10, altitudeM: 50, spacingPct: 85,
       terrain: 'flat', seed: 42,
       base: { x: 0, y: 0 },
-      target: { x: 450, y: -120 },
       windSpd: 0, windDir: 0,
       corridor: true, broadcast: true, coverage: false,
       gpsZones: [], jammers: [],

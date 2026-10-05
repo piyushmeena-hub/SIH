@@ -40,7 +40,7 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(true);
   const [webglError, setWebglError] = useState(null);
   const [modeIndex, setModeIndex] = useState(0);
-  const [viewMode, setViewMode] = useState('2d');
+  const [viewMode, setViewMode] = useState('3d');
   const viewModeRef = useRef(viewMode);
   viewModeRef.current = viewMode;
   const [intensity, setIntensity] = useState(1);

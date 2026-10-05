@@ -279,44 +279,9 @@ function drawBase(ctx, cv, view, base) {
   ctx.fillText('C2 ground station', c.x, c.y + 26 * U);
 }
 
-function drawDisasterHazards(ctx, cv, view, s) {
-  if (!s.hazardZones || !s.hazardZones.length) return;
-  const U = window.uiScale || 1;
-  for (const hz of s.hazardZones) {
-    const c = worldToScreen(view, cv, hz.x2d ?? hz.x ?? 0, hz.y2d ?? hz.y ?? 0);
-    const r = (hz.r2d || 75) * view.pxPerM;
-    if (r < 4 || r > 6000) continue;
-    let stroke = 'rgba(249,115,22,0.45)';
-    let fill = 'rgba(249,115,22,0.08)';
-    if (hz.kind === 'flood' || hz.kind === 'tsunami') {
-      stroke = 'rgba(56,189,248,0.45)';
-      fill = 'rgba(56,189,248,0.08)';
-    } else if (hz.kind === 'tornado') {
-      stroke = 'rgba(148,163,184,0.45)';
-      fill = 'rgba(148,163,184,0.08)';
-    }
-    ctx.beginPath();
-    ctx.arc(c.x, c.y, r, 0, Math.PI * 2);
-    ctx.fillStyle = fill;
-    ctx.fill();
-    ctx.strokeStyle = stroke;
-    ctx.lineWidth = 1.2 * U;
-    ctx.setLineDash([6 * U, 4 * U]);
-    ctx.stroke();
-    ctx.setLineDash([]);
-    if (hz.label) {
-      ctx.font = (10 * U) + 'px "IBM Plex Mono", monospace';
-      ctx.fillStyle = stroke;
-      ctx.textAlign = 'center';
-      ctx.fillText(hz.label, c.x, c.y - r - 4 * U);
-    }
-  }
-}
-
 function drawPois(ctx, cv, view, pois) {
   const U = window.uiScale || 1;
   if (!pois) return;
-  const selectedPoiId = (typeof PoiStore !== 'undefined' && PoiStore.selectedPoiId) ? PoiStore.selectedPoiId : null;
   for (const poi of pois) {
     if (typeof PoiStore !== "undefined" && PoiStore.recordMapRender) {
       PoiStore.recordMapRender(poi.id, poi.state, poi.assignedUavId, Math.floor(poi.progress));
@@ -325,19 +290,8 @@ function drawPois(ctx, cv, view, pois) {
     let color = COLORS.target;
     if (poi.state === 'SURVEYED' || poi.state === 'ACKNOWLEDGED') color = '#55aa55';
     else if (poi.state === 'SURVEYING' || poi.state === 'DATA_CREATED') color = '#ffaa00';
-    else if (poi.isSurvivor) color = '#f43f5e';
     else if (poi.priority === 'CRITICAL') color = '#ff3333';
     else if (poi.priority === 'HIGH') color = '#ff7700';
-
-    if (selectedPoiId === poi.id) {
-      ctx.beginPath();
-      ctx.arc(c.x, c.y, 16 * U, 0, 2 * Math.PI);
-      ctx.strokeStyle = '#38bdf8';
-      ctx.lineWidth = 2 * U;
-      ctx.setLineDash([3 * U, 3 * U]);
-      ctx.stroke();
-      ctx.setLineDash([]);
-    }
 
     ctx.beginPath();
     ctx.arc(c.x, c.y, 10 * U, 0, 2 * Math.PI);
@@ -345,14 +299,6 @@ function drawPois(ctx, cv, view, pois) {
     ctx.strokeStyle = color; ctx.lineWidth = 2 * U;
     ctx.stroke();
     ctx.setLineDash([]);
-
-    if (poi.isSurvivor) {
-      ctx.beginPath();
-      ctx.moveTo(c.x - 4 * U, c.y); ctx.lineTo(c.x + 4 * U, c.y);
-      ctx.moveTo(c.x, c.y - 4 * U); ctx.lineTo(c.x, c.y + 4 * U);
-      ctx.strokeStyle = color; ctx.lineWidth = 2 * U;
-      ctx.stroke();
-    }
     
     // Progress arc
     if (poi.progress > 0 && poi.progress < 100) {
@@ -363,11 +309,14 @@ function drawPois(ctx, cv, view, pois) {
     }
 
     ctx.fillStyle = color;
-    ctx.font = (11 * U) + 'px "IBM Plex Mono", monospace';
+    ctx.font = (12 * U) + 'px "IBM Plex Mono", monospace';
     ctx.textAlign = 'center';
-    ctx.fillText(poi.id + ' (' + poi.state + ')', c.x, c.y + 23 * U);
+    ctx.fillText(poi.id + ' (' + poi.state + ')', c.x, c.y + 24 * U);
     if (poi.assignedUavId) {
-       ctx.fillText('UAV: ' + poi.assignedUavId, c.x, c.y + 35 * U);
+       ctx.fillText('UAV: ' + poi.assignedUavId, c.x, c.y + 36 * U);
+       
+       // Draw route line
+       const uavC = worldToScreen(view, cv, poi.x, poi.y); // actually we need drone pos, but it's hard without knowing drone state here. Skip route line drawing for now to keep rendering simple.
     }
   }
 }
@@ -556,7 +505,6 @@ function render(ctx, cv, view, s, status, selected, usable) {
   // Georeferenced mission → the real map is the ground; otherwise the grid.
   if (!drawTiles(ctx, cv, view, s.terrain.geoAnchor)) drawGrid(ctx, cv, view);
   drawTerrain(ctx, cv, view, s);
-  drawDisasterHazards(ctx, cv, view, s);
   drawCoverage(ctx, cv, view, s);
   drawJammers(ctx, cv, view, s, selected, s.time);
   drawGpsZones(ctx, cv, view, s, s.time);
