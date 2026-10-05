@@ -1073,13 +1073,23 @@ export function createDisasterEngine(canvas, { onStatsUpdate, onEarthquakeUpdate
       const survState = survMap.get(v.id);
       if (survState) {
         const st = survState.status;
-        const mat = (st === 'SURVEYED' || st === 'ACKNOWLEDGED')
+        const isSurveyed = st === 'SURVEYED' || st === 'ACKNOWLEDGED' || survState.detected || survState.lifeVerified;
+        const mat = isSurveyed
           ? VMAT.surveyed
           : (st === 'SURVEYING' || st === 'DATA_CREATED' || st === 'IN_TRANSIT' || st === 'ASSIGNED')
             ? VMAT.surveying
             : VMAT.wait;
         v.beacon.material = mat;
         v.ring.material = mat;
+        if (survState.detected || isSurveyed) {
+          v.beacon.visible = true;
+          v.ring.visible = true;
+          const limbs = v.p?.userData?.limbs;
+          if (limbs) {
+            limbs.armR.rotation.z = 2.4 - Math.sin(t * 8 + v.phase) * 0.6;
+            limbs.armL.rotation.z = -2.4 + Math.sin(t * 8 + v.phase + 1) * 0.6;
+          }
+        }
       }
       if (v.selRing) {
         v.selRing.visible = selPoiId === v.id;
@@ -2187,7 +2197,7 @@ export function createDisasterEngine(canvas, { onStatsUpdate, onEarthquakeUpdate
     packetPulseMat: new THREE.MeshBasicMaterial({ color: 0xffffff }),
 
     // AI Vision FLIR Thermal & OpenCV Hazards
-    flirVitalSign: M(0xff0055, { emissive: 0xff0044, emissiveIntensity: 1.8, side: THREE.DoubleSide }),
+    flirVitalSign: M(0x10b981, { emissive: 0x059669, emissiveIntensity: 1.8, side: THREE.DoubleSide }),
     hazardFire: M(0xff4500, { emissive: 0xff2200, emissiveIntensity: 2.0 }),
     hazardGas: new THREE.MeshBasicMaterial({ color: 0xeab308, transparent: true, opacity: 0.35, depthWrite: false }),
     hazardRoad: M(0xf59e0b, { emissive: 0xd97706, emissiveIntensity: 1.4 }),
@@ -2639,14 +2649,17 @@ export function createDisasterEngine(canvas, { onStatsUpdate, onEarthquakeUpdate
     for (const v of victimList) {
       const match = st.survivors.find(s => s.id === v.id || (Math.hypot(s.position.x - v.g.position.x, s.position.z - v.g.position.z) < 8));
       if (match && match.detected) {
-        if (match.lifeVerified) {
-          v.beacon.material = ROLE_MATS.flirVitalSign;
-          v.ring.material = ROLE_MATS.flirVitalSign;
-          const pulse = 1.0 + Math.sin(t * 7) * 0.35; // Heartbeat vital pulse
-          v.beacon.scale.setScalar(pulse * 1.25);
-          v.ring.scale.setScalar(pulse * 1.6);
-        } else {
-          v.beacon.material = ROLE_MATS.poiSurveying;
+        v.beacon.visible = true;
+        v.ring.visible = true;
+        v.beacon.material = VMAT.surveyed;
+        v.ring.material = VMAT.surveyed;
+        const pulse = 1.0 + Math.sin(t * 7) * 0.35; // Heartbeat vital pulse
+        v.beacon.scale.setScalar(pulse * 1.25);
+        v.ring.scale.setScalar(pulse * 1.6);
+        const limbs = v.p?.userData?.limbs;
+        if (limbs) {
+          limbs.armR.rotation.z = 2.4 - Math.sin(t * 8 + v.phase) * 0.6;
+          limbs.armL.rotation.z = -2.4 + Math.sin(t * 8 + v.phase + 1) * 0.6;
         }
       }
     }
@@ -3261,6 +3274,14 @@ export function createDisasterEngine(canvas, { onStatsUpdate, onEarthquakeUpdate
       }
       poiMeshes.clear();
       sharedSim.state.pois = [];
+      showGasView = false;
+      if (gasGroup) gasGroup.visible = false;
+      showThermalView = false;
+      applyThermalMode(false);
+      if (sharedSim.fleetManager) {
+        sharedSim.fleetManager.setNoNetworkZone(false);
+      }
+      sharedSim.toggleNoNetworkZone(false, 20, 10, 35, 'engine');
       setMode(curModeIndex);
       resetView();
     },

@@ -21,8 +21,8 @@ export const FLEET_CONFIG = {
   SENSOR_RADIUS: 16.0,       // Victim detection & cell coverage radius
   BATTERY_DRAIN_RATE: 0.16,  // % per second in flight
   BATTERY_CHARGE_RATE: 16.0, // % per second on charging pad
-  APF_SAFETY_DIST: 3.5,      // Minimum separation between drones
-  HARD_SAFETY_CLEARANCE: 1.8,// Hard collision envelope
+  APF_SAFETY_DIST: 5.5,      // Minimum separation between drones
+  HARD_SAFETY_CLEARANCE: 2.0,// Hard collision envelope
   CRUISE_ALTITUDE: 14.0,     // Height above ground
   GRID_RESOLUTION: 16,       // 16x16 = 256 coverage cells
 };
@@ -177,6 +177,12 @@ export class FleetManager {
         };
       }
 
+      // Tiered cruising altitudes (A6): each drone operates in its own vertical layer
+      // (13.0m to 25.0m) to guarantee 3D physical separation and eliminate drone-drone collisions
+      const tieredAlt = initialRole === 'RELAY'
+        ? 21.0 + (i % 2) * 3.5
+        : 13.0 + (i % 5) * 2.2;
+
       const drone = {
         id: droneId,
         name: `DR${droneId}`,
@@ -199,7 +205,7 @@ export class FleetManager {
         inNoNetworkZone: false,
         lastMoveTime: 0,
         detectedVictimCount: 0,
-        targetAltitude: FLEET_CONFIG.CRUISE_ALTITUDE,
+        targetAltitude: tieredAlt,
       };
 
       this.drones.push(drone);
@@ -212,6 +218,10 @@ export class FleetManager {
       for (const s of this.store.state.survivors) {
         s.detected = false;
         s.detectedAt = null;
+        s.status = 'UNASSIGNED';
+        s.lifeVerified = false;
+        s.progress = 0;
+        s.assignedDrone = null;
       }
     }
 
@@ -282,6 +292,7 @@ export class FleetManager {
         bestSearcher.role = 'RELAY';
         bestSearcher.state = 'RELAY';
         bestSearcher.target = { ...drone.target };
+        bestSearcher.targetAltitude = 21.0 + (bestSearcher.id % 2) * 3.5;
         this.relays.add(bestSearcher.id);
         if (this.store) {
           this.store.logSync(`Mesh self-healing: DR${bestSearcher.id} promoted to RELAY replacing killed DR${droneId}`);
@@ -377,6 +388,7 @@ export class FleetManager {
         d.role = 'SEARCH';
         d.state = 'LAUNCH';
         d.mode = 'launch';
+        d.targetAltitude = 13.0 + ((d.id - 1) % 5) * 2.2;
         d.launchTime = this.simTime + 0.5;
       }
       return;
@@ -469,8 +481,10 @@ export class FleetManager {
           const ox = d.position.x - other.position.x;
           const oz = d.position.z - other.position.z;
           const odist = Math.hypot(ox, oz);
-          if (odist < FLEET_CONFIG.APF_SAFETY_DIST && odist > 0.01) {
-            const repForce = (FLEET_CONFIG.APF_SAFETY_DIST - odist) * 5.0;
+          const safetyDist = FLEET_CONFIG.APF_SAFETY_DIST;
+          if (odist < safetyDist && odist > 0.01) {
+            const ratio = (safetyDist - odist) / safetyDist;
+            const repForce = ratio * 16.0 + (odist < 3.0 ? 25.0 : 0);
             vx += (ox / odist) * repForce;
             vz += (oz / odist) * repForce;
           }
@@ -742,6 +756,10 @@ export class FleetManager {
             if (dist <= FLEET_CONFIG.SENSOR_RADIUS) {
               s.detected = true;
               s.detectedAt = this.simTime;
+              s.status = 'SURVEYED';
+              s.lifeVerified = true;
+              s.progress = 100;
+              s.assignedDrone = `DR${d.id}`;
               d.detectedVictimCount = (d.detectedVictimCount || 0) + 1;
               if (this.store) {
                 this.store.logSync(`Victim ${s.id} detected by DR${d.id} at [${Math.round(sx)}, ${Math.round(sz)}] via FLIR/Optical sensor`);
@@ -758,6 +776,10 @@ export class FleetManager {
               if (dist <= FLEET_CONFIG.SENSOR_RADIUS || (sx >= cell.minX && sx <= cell.maxX && sz >= cell.minZ && sz <= cell.maxZ)) {
                 s.detected = true;
                 s.detectedAt = this.simTime;
+                s.status = 'SURVEYED';
+                s.lifeVerified = true;
+                s.progress = 100;
+                s.assignedDrone = 'Swarm';
                 if (this.store) {
                   this.store.logSync(`Victim ${s.id} detected at [${Math.round(sx)}, ${Math.round(sz)}] via footprint coverage`);
                 }

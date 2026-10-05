@@ -36,6 +36,7 @@ class SharedSimulationStore {
         elapsedTime: 0,
         timeScale: 5,
         paused: false,
+        viewMode: '3d',
         target2D: { x: 450, y: -120 },
         target3D: world2DTo3D(450, -120, 0),
       },
@@ -183,6 +184,13 @@ class SharedSimulationStore {
       elapsedTime: this.state.mission.elapsedTime,
       source,
     });
+  }
+
+  setViewMode(mode, source = 'ui') {
+    const next = mode === '2d' ? '2d' : '3d';
+    if (this.state.mission.viewMode === next) return;
+    this.state.mission.viewMode = next;
+    this.logSync(`View mode set to ${next.toUpperCase()} (source: ${source})`);
   }
 
   // --- Bidirectional Selection -----------------------------------------------
@@ -453,6 +461,11 @@ class SharedSimulationStore {
   // --- 2D Swarm Engine -> Shared Store Synchronization -----------------------
   sync2DSwarmToStore(snapshot) {
     if (!snapshot) return;
+    // In 3D mode, the authoritative FleetManager owns 3D drones, network mesh, and PoIs.
+    // Do not let background 2D iframe inject phantom drones or overwrite mesh state!
+    if (this.state.mission.viewMode !== '2d') {
+      return;
+    }
     const H = this.heightFn3D;
 
     // 1. Mission clock & target

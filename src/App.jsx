@@ -453,6 +453,7 @@ export default function App() {
 
   const handleViewDimension = useCallback(dim => {
     setViewMode(dim);
+    sharedSim.setViewMode(dim);
     engineRef.current?.setViewMode(dim);
     if (iframeRef.current?.contentWindow) {
       iframeRef.current.contentWindow.postMessage({ type: 'SET_2D_ACTIVE', active: dim === '2d' }, '*');
@@ -472,7 +473,13 @@ export default function App() {
 
   const selectMode = useCallback(idx => {
     setModeIndex(idx);
+    setNoNetworkZoneActive(false);
+    setGasView(false);
+    setThermalView(false);
+    sharedSim.toggleNoNetworkZone(false, 20, 10, 35, 'ui');
     if (engineRef.current) {
+      engineRef.current.setGasView(false);
+      engineRef.current.setThermalView(false);
       engineRef.current.setMode(idx);
     }
     if (dockRef.current && dockRef.current.children[idx]) {
@@ -547,6 +554,13 @@ export default function App() {
   };
 
   const handleResetSimulation = () => {
+    setNoNetworkZoneActive(false);
+    setNoNetworkRadius(35);
+    setGasView(false);
+    setThermalView(false);
+    sharedSim.toggleNoNetworkZone(false, 20, 10, 35, 'ui');
+    engineRef.current?.setGasView(false);
+    engineRef.current?.setThermalView(false);
     engineRef.current?.resetSimulation();
   };
 

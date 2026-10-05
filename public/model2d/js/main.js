@@ -1760,8 +1760,10 @@
       PoiStore.syncUi(swarm);
     }
 
-    // Publish authoritative 2D swarm state to SharedSimulationStore every frame
-    syncToSharedStore(status);
+    // Publish authoritative 2D swarm state to SharedSimulationStore only when 2D view is active
+    if (hostActive) {
+      syncToSharedStore(status);
+    }
 
     panelAccum += realDt;
     if (panelAccum > 0.2) { updatePanels(status); panelAccum = 0; }
