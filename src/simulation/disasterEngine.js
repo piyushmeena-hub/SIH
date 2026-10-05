@@ -14,6 +14,14 @@ export const CITY_CONFIG = {
   minSurvivorSpacing: 14.0
 };
 
+export const TSUNAMI_PHASES = {
+  NORMAL: 'NORMAL',
+  RECESSION: 'RECESSION',
+  WAVE_APPROACHING: 'WAVE_APPROACHING',
+  INUNDATING: 'INUNDATING',
+  PERSISTENT_INUNDATION: 'PERSISTENT_INUNDATION',
+};
+
 export const MODES_META = [
   {
     id: 'earthquake',
@@ -26,7 +34,7 @@ export const MODES_META = [
     id: 'flood',
     name: 'Flood',
     icon: '🌊',
-    desc: 'River water rises and falls over the valley town. With the streets under water, unconscious survivors lie on rooftops while others wave to the boats and two rescue helicopters.',
+    desc: 'River water rises over the valley town and maintains its inundation level. With the streets under water, unconscious survivors lie on rooftops while others wave to the boats and two rescue helicopters.',
     tip: 'Move to higher ground right away. Never walk or drive through floodwater; even shallow moving water can sweep you off your feet.'
   },
   {
@@ -35,20 +43,6 @@ export const MODES_META = [
     icon: '🔥',
     desc: 'A fire starts in the trees beside the town and spreads tree by tree, leaving charred trees and ash behind, until some buildings catch fire. Smoke drifts downwind while a water helicopter works the fire. People overcome by smoke lie in the town streets.',
     tip: 'Leave early when told to evacuate. If trapped, get to a cleared area, stay low out of the smoke and cover your nose and mouth.'
-  },
-  {
-    id: 'tornado',
-    name: 'Tornado',
-    icon: '🌪️',
-    desc: 'A rotating funnel tracks straight through the town under a dark storm cloud, ripping off roofs, tilting walls and flattening some buildings. People knocked unconscious lie in the town streets.',
-    tip: 'Go to a basement or an interior room on the lowest floor, away from windows. Cover your head and neck.'
-  },
-  {
-    id: 'volcano',
-    name: 'Volcano',
-    icon: '🌋',
-    desc: 'The volcano erupts an ash column and throws lava bombs while glowing lava flows creep downhill. People who collapsed in the ash lie in the town streets.',
-    tip: 'Follow official evacuation routes and avoid valleys where lava and mudflows travel. Cover your nose and mouth against falling ash.'
   },
   {
     id: 'tsunami',
@@ -66,7 +60,7 @@ export const MODES_META = [
   }
 ];
 
-export function createDisasterEngine(canvas, { onStatsUpdate, onEarthquakeUpdate, moveSpeed = 45.0 } = {}) {
+export function createDisasterEngine(canvas, { onStatsUpdate, onEarthquakeUpdate, moveSpeed = 45.0, initialMode = 0 } = {}) {
   let currentMoveSpeed = typeof moveSpeed === 'number' && moveSpeed > 0 ? moveSpeed : 45.0;
   const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -449,11 +443,11 @@ export function createDisasterEngine(canvas, { onStatsUpdate, onEarthquakeUpdate
   let paused = false;
   let viewMode = '3d';
   let agents = [], victimList = [], obstacles = [], buildings = [], parts = [], sirens = [], helis = [], modeT = 0;
-  let curTerrain = null, wreck = null, extraDispose = [];
+  let wreck = null, extraDispose = [];
 
   function clearMode() {
-    if (curMode && curMode.id === 'volcano') {
-      console.info('[Volcano] cleanup');
+    if (curMode && curMode.id === 'landslide') {
+      console.info('[Landslide] cleanup');
     }
     world.remove(modeGroup);
     const disposed = new Set();
@@ -482,7 +476,6 @@ export function createDisasterEngine(canvas, { onStatsUpdate, onEarthquakeUpdate
     });
     extraDispose = [];
     wreck = null;
-    curTerrain = null;
     modeGroup.clear();
     modeGroup = new THREE.Group();
     world.add(modeGroup);
@@ -547,7 +540,6 @@ export function createDisasterEngine(canvas, { onStatsUpdate, onEarthquakeUpdate
     const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1 }));
     mesh.receiveShadow = true;
     modeGroup.add(mesh);
-    curTerrain = mesh;
   }
   function slopeAt(x, z) {
     return Math.hypot(H(x + 1, z) - H(x - 1, z), H(x, z + 1) - H(x, z - 1)) / 2;
@@ -1344,8 +1336,6 @@ export function createDisasterEngine(canvas, { onStatsUpdate, onEarthquakeUpdate
           if (modeT > 2.0 && v.z < 65) isAffected = true;
         } else if (curMode.id === 'tsunami') {
           if (modeT > 2.0) isAffected = true;
-        } else if (curMode.id === 'volcano') {
-          if (modeT > 2.0) isAffected = true;
         }
         if (isAffected && v.state === 'healthy') {
           v.state = 'affected';
@@ -1376,55 +1366,6 @@ export function createDisasterEngine(canvas, { onStatsUpdate, onEarthquakeUpdate
     mesh.receiveShadow = true;
     modeGroup.add(mesh);
     return mesh;
-  }
-
-  // Dark crust plates with glowing cracks; used as colour and emissive map and scrolled along each flow.
-  let lavaTex = null;
-  function lavaFlow(curve, seg, r) {
-    if (!lavaTex) {
-      const cv = document.createElement('canvas');
-      cv.width = 256;
-      cv.height = 64;
-      const g = cv.getContext('2d');
-      g.fillStyle = '#1e0904';
-      g.fillRect(0, 0, 256, 64);
-      for (let k = 0; k < 26; k++) {
-        const x = Math.random() * 256, y = Math.random() * 64, rr = 6 + Math.random() * 14;
-        for (const ox of [-256, 0, 256]) {
-          const gr = g.createRadialGradient(x + ox, y, 0, x + ox, y, rr);
-          gr.addColorStop(0, 'rgba(255,120,20,0.9)');
-          gr.addColorStop(1, 'rgba(255,60,0,0)');
-          g.fillStyle = gr;
-          g.fillRect(x + ox - rr, y - rr, rr * 2, rr * 2);
-        }
-      }
-      for (let k = 0; k < 34; k++) {
-        const x0 = Math.random() * 256, y0 = Math.random() * 64, x1 = x0 + 20 + Math.random() * 50, y1 = Math.random() * 64;
-        const cx = (x0 + x1) / 2 + (Math.random() - 0.5) * 30, cy = Math.random() * 64;
-        for (const ox of [-256, 0, 256]) {
-          [[5, '#ff5a0a'], [2.2, '#ffb030'], [0.9, '#fff0a0']].forEach(([lw, cs]) => {
-            g.strokeStyle = cs;
-            g.lineWidth = lw;
-            g.beginPath();
-            g.moveTo(x0 + ox, y0);
-            g.quadraticCurveTo(cx + ox, cy, x1 + ox, y1);
-            g.stroke();
-          });
-        }
-      }
-      lavaTex = new THREE.CanvasTexture(cv);
-      lavaTex.wrapS = lavaTex.wrapT = THREE.RepeatWrapping;
-      shared.add(lavaTex);
-    }
-    const tex = lavaTex.clone();
-    tex.needsUpdate = true;
-    tex.repeat.set(Math.max(1, curve.getLength() / 14), 1);
-    const mat = new THREE.MeshStandardMaterial({
-      color: 0xffffff, map: tex, emissive: 0xffffff, emissiveMap: tex, emissiveIntensity: 1.4, roughness: 0.9, flatShading: true
-    });
-    const tube = new THREE.Mesh(new THREE.TubeGeometry(curve, seg, r, 6), mat);
-    modeGroup.add(tube);
-    return { tube, mat, tex, curve, r, total: tube.geometry.index.count, draw: 0 };
   }
 
   function updateWater(mesh, fn) {
@@ -1575,21 +1516,7 @@ export function createDisasterEngine(canvas, { onStatsUpdate, onEarthquakeUpdate
         addTown(0, 0, L, { damage: 0 });
         // Apply default post-M7.0 earthquake damage aftermath (Tier 4: Partial Collapse) immediately on mount
         applyM70Aftermath();
-        let px = -140, pz = -95;
-        const fis = new THREE.InstancedMesh(G.box, M(0x1b1612), 75);
-        for (let k = 0; k < 75; k++) {
-          const nx = px + 3.8, nz = pz + 1.9 + (vnoise(k * 0.35, 1.7) - 0.5) * 7;
-          const mx = (px + nx) / 2, mz = (pz + nz) / 2;
-          _dummy.scale.set(Math.hypot(nx - px, nz - pz) + 0.6, 0.4, R(0.8, 2.4));
-          _dummy.position.set(mx, H(mx, mz) + 0.12, mz);
-          _dummy.rotation.set(0, -Math.atan2(nz - pz, nx - px), 0);
-          _dummy.updateMatrix();
-          fis.setMatrixAt(k, _dummy.matrix);
-          px = nx;
-          pz = nz;
-        }
-        fis.instanceMatrix.needsUpdate = true;
-        modeGroup.add(fis);
+        for (let k = 0; k < 75; k++) rand();
         addTrees(90, (x, z) => okTree(x, z));
         makeVehicle(0xf4f4f4, [0xff2a2a, 0x2a6bff], 56, 14, Math.PI / 2);
         makeVehicle(0xc0262b, [0xff2a2a, 0xff2a2a], 56, -12, Math.PI / 2);
@@ -2005,7 +1932,10 @@ export function createDisasterEngine(canvas, { onStatsUpdate, onEarthquakeUpdate
         makeHeli(0xff8c1a, () => [0, -4], 22, 56, -0.5);
       },
       update(dt, t, c) {
-        c.L = 0.3 + ((1 - Math.cos((t * 2 * Math.PI) / 40)) / 2) * 4.2 * INT;
+        const rise = smooth(0, 16, t);
+        const targetL = 0.3 + rise * 4.2 * INT;
+        c.L = c.L === undefined ? targetL : c.L + (targetL - c.L) * Math.min(1, dt * 4.0);
+        if (t <= 0.05) c.L = 0.3;
         curMode._waterLevel = c.L;
         updateWater(c.water, (x, z) => c.L + Math.sin(x * 0.13 + t * 1.4) * 0.12 + Math.sin(z * 0.21 + t * 0.9) * 0.08);
         for (const b of c.boats) {
@@ -2036,7 +1966,10 @@ export function createDisasterEngine(canvas, { onStatsUpdate, onEarthquakeUpdate
         }
       },
       status(c) {
-        return `Floodwater ${Math.max(0, c.L - 0.6).toFixed(1)} m above street level`;
+        const depth = Math.max(0, c.L - 0.6).toFixed(1);
+        return modeT < 16
+          ? `Floodwater rising: ${depth} m above street level`
+          : `City inundated: floodwater maintained at ${depth} m above street level`;
       }
     },
     {
@@ -2371,656 +2304,7 @@ export function createDisasterEngine(canvas, { onStatsUpdate, onEarthquakeUpdate
     },
     {
       ...MODES_META[3],
-      sky: 0x5b6862, fog: 0x6a7670, fogNear: 40, fogFar: 240, hemiI: 0.55, sunI: 0.4, hemiGround: 0x3c4038,
-      town: [-5, 10], townR: 54, safe: [-88, -74], camR: 162,
-      raw: (x, z) => hills(x, z, 4) + fbm(x * 0.06, z * 0.06, 2) * 1.5,
-      build(c) {
-        addTown(-5, 10, this._townLevel, {});
-        c.trees = addTrees(110, (x, z) => okTree(x, z), undefined, true);
-        makeVehicle(0xf4f4f4, [0xff2a2a, 0x2a6bff], -62, -10, 0);
-        makeVehicle(0xc0262b, [0xff2a2a, 0xff2a2a], 52, 18, Math.PI);
-        c.cx = 0;
-        c.cz = 0;
-        c.gy = 0;
-        const N = Math.max(10, Math.round(2600 * PSCALE)), fa = new Float32Array(N), fh = new Float32Array(N), fr = new Float32Array(N);
-        new Particles(2600, {
-          color: 0x8e8b82, size: 2.4, opacity: 0.5,
-          spawn: (i, p) => {
-            fa[i] = rand() * 6.283;
-            fh[i] = rand();
-            fr[i] = R(0.7, 1.3);
-            p.life[i] = 1e9;
-          },
-          step: (i, dt, p) => {
-            fa[i] += dt * INT * (7 - fh[i] * 3);
-            fh[i] += dt * 0.045 * fr[i];
-            if (fh[i] > 1) fh[i] -= 1;
-            const h = fh[i];
-            const r = (1.3 + Math.pow(h, 1.7) * 17) * fr[i], sway = Math.sin(h * 3 + modeT * 0.8) * h * 5, k = i * 3;
-            p.pos[k] = c.cx + Math.cos(fa[i]) * r + sway;
-            p.pos[k + 1] = c.gy + h * 56;
-            p.pos[k + 2] = c.cz + Math.sin(fa[i]) * r;
-          }
-        });
-        const D = Math.max(10, Math.round(500 * PSCALE)), da = new Float32Array(D), dr = new Float32Array(D), dh = new Float32Array(D);
-        new Particles(500, {
-          color: 0x7a6650, size: 3.2, opacity: 0.45,
-          spawn: (i, p) => {
-            da[i] = rand() * 6.283;
-            dr[i] = R(3, 14);
-            dh[i] = R(0, 6);
-            p.life[i] = 1e9;
-          },
-          step: (i, dt, p) => {
-            da[i] += dt * INT * 4;
-            const k = i * 3;
-            p.pos[k] = c.cx + Math.cos(da[i]) * dr[i];
-            p.pos[k + 1] = c.gy + dh[i];
-            p.pos[k + 2] = c.cz + Math.sin(da[i]) * dr[i];
-          }
-        });
-        const cloudMat = new THREE.MeshStandardMaterial({ color: 0x3c4440, transparent: true, opacity: 0.92, flatShading: true });
-        c.cloud = new THREE.Mesh(new THREE.CylinderGeometry(100, 100, 8, 32), cloudMat);
-        c.cloud.position.y = 64;
-        modeGroup.add(c.cloud);
-        c.wall = new THREE.Mesh(new THREE.ConeGeometry(24, 14, 16), cloudMat);
-        c.wall.rotation.x = Math.PI;
-        modeGroup.add(c.wall);
-        c.debris = [];
-        for (let k = 0; k < 50; k++) {
-          const m = new THREE.Mesh(G.box, M(pick([0x7a5a3a, 0x8d857b, 0x5a4a3a, 0xb0a698])));
-          m.scale.set(R(0.3, 1.4), R(0.1, 0.5), R(0.3, 1.2));
-          modeGroup.add(m);
-          c.debris.push({ m, a: rand() * 6.28, r: R(3, 14), h: R(0, 24), s: R(2, 5) });
-        }
-        precip(1800, { color: 0xa8b4bc, size: 0.45, opacity: 0.55, fall: 40, wind: 10 });
-      },
-      postBuild(c) {
-        makeWreck();
-        buildings.forEach(rig);
-        // Closed loop that crosses the whole town corner to corner, twice (an X through the centre).
-        const [tx, tz] = this.town, V = (x, z) => new THREE.Vector3(tx + x, 0, tz + z);
-        c.path = new THREE.CatmullRomCurve3([V(-85, -80), V(-3, -2), V(80, 82), V(86, -76), V(3, 2), V(-82, 84)], true, 'centripetal');
-        c.loop = -1;
-        c.flying = [];
-        c.pt = new THREE.Vector3();
-      },
-      update(dt, t, c) {
-        const T = t * INT, u = T * 0.014, loop = Math.floor(u);
-        if (loop !== c.loop) {
-          if (c.loop >= 0) {
-            // New pass: rebuild the town and stand the trees back up.
-            resetWreck();
-            c.flying.length = 0;
-            buildings.forEach(b => {
-              b.thit = false;
-              b.tcol = 0;
-            });
-            c.trees.forEach(tr => {
-              tr.hit = false;
-              tr.g.rotation.z = 0;
-            });
-          }
-          c.loop = loop;
-        }
-        c.path.getPointAt(u - loop, c.pt);
-        c.cx = c.pt.x + Math.sin(T * 0.9) * 2.5;
-        c.cz = c.pt.z + Math.cos(T * 0.7) * 2.5;
-        c.gy = H(c.cx, c.cz);
-        c.cloud.position.x = c.cx * 0.5;
-        c.cloud.position.z = c.cz * 0.5;
-        // Seen from above, the storm cloud thins out so it never hides the town and the funnel's path.
-        const cm = c.cloud.material, above = camera.position.y > c.cloud.position.y + 4;
-        cm.opacity += ((above ? 0.25 : 0.92) - cm.opacity) * Math.min(1, dt * 4);
-        cm.depthWrite = cm.opacity > 0.8;
-        c.wall.position.set(c.cx, c.gy + 56, c.cz);
-        for (const d of c.debris) {
-          d.a += dt * d.s * INT;
-          d.m.position.set(c.cx + Math.cos(d.a) * d.r, c.gy + d.h + Math.sin(t + d.r) * 2, c.cz + Math.sin(d.a) * d.r);
-          d.m.rotation.x += dt * 5;
-          d.m.rotation.y += dt * 4;
-        }
-        for (const b of buildings) {
-          if (!b.rig) continue;
-          const dx = b.x - c.cx, dz = b.z - c.cz, d = Math.hypot(dx, dz) || 1;
-          if (!b.thit && d < 13 + Math.max(b.hw, b.hd) * 0.5) {
-            b.thit = true;
-            // Roof ripped off and pulled into the debris cloud.
-            modeGroup.attach(b.roof);
-            c.flying.push({ m: b.roof, a: Math.atan2(dz, dx), r: Math.max(3, d), h: b.top - c.gy, t: 0, life: R(1.6, 3.2), mode: 0, v: new THREE.Vector3(), spin: R(4, 9) });
-            // Walls lean with the rotating wind (counter-clockwise) and slightly outward.
-            const nx = dx / d, nz = dz / d, wx = -nz * 0.7 + nx * 0.3, wz = nx * 0.7 + nz * 0.3, mag = R(0.1, 0.26) * Math.min(1.3, INT);
-            b.tg.set(wz * mag, -wx * mag);
-            b.tdir = [wx, wz];
-            crack(b, 3, wx, wz);
-            if (d < 9 || rand() < 0.3 * INT) b.tcol = t + R(0.3, 1.2);
-          }
-          if (b.tcol && t >= b.tcol) {
-            collapse(b, b.tdir[0], b.tdir[1]);
-            b.tcol = 0;
-          }
-        }
-        for (const f of c.flying) {
-          const p = f.m.position;
-          f.t += dt;
-          if (f.mode === 0) {
-            const w = Math.max(1.5, 5 - f.r * 0.12) * INT;
-            f.a += dt * w;
-            f.r += dt * 1.5;
-            f.h = Math.min(30, f.h + dt * 9);
-            p.set(c.cx + Math.cos(f.a) * f.r, c.gy + f.h, c.cz + Math.sin(f.a) * f.r);
-            f.m.rotation.x += dt * f.spin;
-            f.m.rotation.y += dt * f.spin * 0.7;
-            if (f.t > f.life) {
-              const sp = Math.min(22, w * f.r);
-              f.mode = 1;
-              f.v.set(-Math.sin(f.a) * sp, R(2, 6), Math.cos(f.a) * sp);
-            }
-          } else if (f.mode === 1) {
-            f.v.y -= 22 * dt;
-            p.addScaledVector(f.v, dt);
-            f.m.rotation.x += dt * f.spin;
-            f.m.rotation.z += dt * f.spin * 0.5;
-            const gy = H(p.x, p.z) + 0.3;
-            if (p.y <= gy) {
-              p.y = gy;
-              f.mode = 2;
-              f.m.rotation.set(R(-0.3, 0.3), f.m.rotation.y, R(-0.3, 0.3));
-            }
-          }
-        }
-        for (const tr of c.trees) {
-          if (!tr.hit && Math.hypot(tr.x - c.cx, tr.z - c.cz) < 9) {
-            tr.hit = true;
-            tr.g.rotation.z = R(-1.4, 1.4);
-          }
-        }
-      },
-      status(c) {
-        return `Funnel ${Math.round(Math.hypot(c.cx + 5, c.cz - 10))} m from the town center`;
-      }
-    },
-    {
-      ...MODES_META[4],
-      sky: 0x7d716b, fogNear: 115, fogFar: 420, hemiI: 0.62, sun: 0xffd2b0, sunI: 0.72, hemiGround: 0x3a302c,
-      town: [44, 38], townR: 42, safe: [96, -36], camR: 168, camTarget: [-2, -2],
-      raw: (x, z) => {
-        const d = Math.hypot(x + 50, z + 50);
-        return hills(x, z, 6) + 54 / (1 + (d / 21) ** 2) - 13 * Math.exp(-((d / 5.5) ** 2));
-      },
-      color(c, x, y, z, s) {
-        natural(c, x, y, z, s, { grass: 0x6f7a4a, dry: 0x8a8060 });
-        _c2.set(0x3a3230);
-        c.lerp(_c2, smooth(9, 24, y));
-        _c2.set(0x77706a);
-        c.lerp(_c2, 0.5 * smooth(90, 30, Math.hypot(x + 50, z + 50)));
-      },
-      build(c) {
-        addTown(44, 38, this._townLevel, { compact: true });
-        addTrees(120, (x, z) => okTree(x, z) && Math.hypot(x + 50, z + 50) > 42);
-        makeVehicle(0xe8b820, null, 0, 48, 0);
-        makeVehicle(0xf4f4f4, [0xff2a2a, 0x2a6bff], 88, 22, Math.PI / 2);
-        makeHeli(0x3a6ea8, () => [10, 10], 55, 48, 0.25);
-
-        const top = H(-50, -50);
-        const rim = top + 5.8;
-        const poolY = rim - 1.15;
-        c.samplePt = new THREE.Vector3();
-        c.flowOffset = 0;
-
-        // 1. Animated Crater Lava Pool + Convective Core + Bubbling Magma Mounds
-        const poolMat = new THREE.MeshStandardMaterial({
-          color: 0xff3b00,
-          emissive: 0xff4500,
-          emissiveIntensity: 1.85,
-          roughness: 0.28,
-          flatShading: true
-        });
-        const pool = new THREE.Mesh(new THREE.CircleGeometry(7.2, 28), poolMat);
-        pool.rotation.x = -Math.PI / 2;
-        pool.position.set(-50, poolY, -50);
-        modeGroup.add(pool);
-
-        const coreMat = new THREE.MeshStandardMaterial({
-          color: 0xffc83b,
-          emissive: 0xff8800,
-          emissiveIntensity: 2.35,
-          roughness: 0.2,
-          flatShading: true
-        });
-        const poolCore = new THREE.Mesh(new THREE.CircleGeometry(4.4, 24), coreMat);
-        poolCore.rotation.x = -Math.PI / 2;
-        poolCore.position.set(-50, poolY + 0.12, -50);
-        modeGroup.add(poolCore);
-
-        const bubbleMat = new THREE.MeshStandardMaterial({
-          color: 0xffb020,
-          emissive: 0xff5500,
-          emissiveIntensity: 2.2,
-          roughness: 0.25,
-          flatShading: true
-        });
-        c.poolBubbles = [];
-        for (let k = 0; k < 6; k++) {
-          const bm = new THREE.Mesh(G.blob, bubbleMat);
-          const ang = (k / 6) * Math.PI * 2 + R(-0.2, 0.2);
-          const rad = R(1.0, 4.6);
-          const bx = -50 + Math.cos(ang) * rad;
-          const bz = -50 + Math.sin(ang) * rad;
-          bm.position.set(bx, poolY + 0.15, bz);
-          bm.scale.set(1.2, 0.5, 1.2);
-          modeGroup.add(bm);
-          c.poolBubbles.push({ m: bm, bx, bz, phase: k * 1.1 + rand() * 2, spd: R(2.2, 3.6) });
-        }
-        c.pool = pool;
-        c.poolMat = poolMat;
-        c.poolCore = poolCore;
-        c.coreMat = coreMat;
-        c.poolY = poolY;
-
-        // 2. Five Downhill Lava Flows (CatmullRomCurve3 starting over the outer crater rim)
-        c.flows = [];
-        [0.35, 0.8, 1.25, 2.6, -1].forEach((a, fi) => {
-          const pts = [
-            new THREE.Vector3(-50 + Math.cos(a) * 5.8, poolY + 0.08, -50 + Math.sin(a) * 5.8),
-            new THREE.Vector3(
-              -50 + Math.cos(a) * 8.2,
-              H(-50 + Math.cos(a) * 8.2, -50 + Math.sin(a) * 8.2) + 0.72,
-              -50 + Math.sin(a) * 8.2
-            )
-          ];
-          let x = -50 + Math.cos(a) * 10.4, z = -50 + Math.sin(a) * 10.4;
-          for (let k = 0; k < 64; k++) {
-            const y = H(x, z);
-            pts.push(new THREE.Vector3(x, y + 0.65, z));
-            const gx = (H(x + 0.8, z) - H(x - 0.8, z)) / 1.6;
-            const gz = (H(x, z + 0.8) - H(x, z - 0.8)) / 1.6;
-            const g = Math.hypot(gx, gz);
-            if (g < 0.014 || Math.max(Math.abs(x - 44), Math.abs(z - 38)) < 43) break;
-            x -= (gx / g) * 1.45 + R(-0.22, 0.22);
-            z -= (gz / g) * 1.45 + R(-0.22, 0.22);
-          }
-          if (pts.length < 4) return;
-          const curve = new THREE.CatmullRomCurve3(pts), seg = pts.length * 2;
-          const f = lavaFlow(curve, seg, 1.55);
-          f.delay = fi * 0.23;
-          f.draw = 0.85;
-          c.flows.push(f);
-        });
-
-        // Animated hot-spot magma surges traveling downhill along the 5 CatmullRomCurve3 lava tubes
-        const surgesPerFlow = 9;
-        const totalSurges = c.flows.length * surgesPerFlow;
-        const surgeMat = new THREE.MeshStandardMaterial({
-          color: 0xffd24c,
-          emissive: 0xff6e00,
-          emissiveIntensity: 2.4,
-          roughness: 0.2,
-          flatShading: true
-        });
-        c.flowHotspots = new THREE.InstancedMesh(G.blob, surgeMat, Math.max(1, totalSurges));
-        c.flowHotspots.frustumCulled = false;
-        c.surgesPerFlow = surgesPerFlow;
-        c.surgeMat = surgeMat;
-        modeGroup.add(c.flowHotspots);
-
-        // Glowing lava embers/sparks rising along the 5 downhill lava flows
-        c.flowSparks = new Particles(320, {
-          color: 0xff8c24,
-          size: 3.8,
-          opacity: 0.85,
-          additive: true,
-          prewarm: true,
-          spawn: (i, p) => {
-            if (!c.flows.length) {
-              p.set(i, -50, rim, -50, 0, 2, 0, 1);
-              return;
-            }
-            const f = pick(c.flows);
-            const u = rand() * (f.draw || 0.85);
-            f.curve.getPointAt(u, c.samplePt);
-            p.set(
-              i,
-              c.samplePt.x + R(-1.2, 1.2),
-              c.samplePt.y + R(0.3, 1.2),
-              c.samplePt.z + R(-1.2, 1.2),
-              R(-0.7, 0.7),
-              R(2.2, 5.2) * (0.75 + 0.35 * INT),
-              R(-0.7, 0.7),
-              R(0.8, 2.0)
-            );
-          }
-        });
-
-        // 3. Dynamic Crater PointLight Illumination
-        ptLight.position.set(-50, rim + 9, -50);
-        ptLight.distance = 165;
-        ptLight.decay = 1.0;
-        ptLight.intensity = 3.2 * INT;
-        c.light = ptLight;
-
-        // 4. Two-Stage Eruption Column: Incandescent Fire Jet + Towering Dark Ash Plume
-        c.plumeFire = new Particles(420, {
-          color: 0xff6e1a,
-          size: 7.5,
-          opacity: 0.88,
-          additive: true,
-          prewarm: true,
-          spawn: (i, p, init) => {
-            const vy = R(14, 26) * (0.65 + 0.45 * INT);
-            const vx = R(-3.8, 3.8) * (0.7 + 0.35 * INT);
-            const vz = R(-3.8, 3.8) * (0.7 + 0.35 * INT);
-            const life = R(1.0, 2.2);
-            const age = init ? rand() * life : 0;
-            p.set(
-              i,
-              -50 + R(-3.4, 3.4) + vx * age,
-              poolY + 0.5 + vy * age,
-              -50 + R(-3.4, 3.4) + vz * age,
-              vx,
-              vy,
-              vz,
-              Math.max(0.1, life - age)
-            );
-          },
-          step: (i, dt, p) => {
-            const k = i * 3;
-            p.vel[k] += dt * 1.6 * INT;
-            p.vel[k + 1] -= dt * 3.5;
-          }
-        });
-
-        c.plumeAsh = new Particles(1600, {
-          color: 0x26211f,
-          size: 11.5,
-          opacity: 0.72,
-          prewarm: true,
-          spawn: (i, p, init) => {
-            const vy = R(11, 20) * (0.65 + 0.45 * INT);
-            const ang = rand() * Math.PI * 2;
-            const radSpd = R(0.8, 3.8) * (0.7 + 0.4 * INT);
-            const vx = Math.cos(ang) * radSpd;
-            const vz = Math.sin(ang) * radSpd;
-            const life = R(5.5, 9.5) * (0.75 + 0.3 * INT);
-            const age = init ? rand() * life : 0;
-            const windX = 1.2 * INT * age * age * 0.16;
-            const windZ = 0.5 * INT * age * age * 0.16;
-            p.set(
-              i,
-              -50 + R(-3.8, 3.8) + vx * age + windX,
-              rim + vy * age * 0.88,
-              -50 + R(-3.8, 3.8) + vz * age + windZ,
-              vx + 1.8 * INT * (age / life),
-              vy * Math.max(0.55, 1 - age * 0.04),
-              vz + 0.7 * INT * (age / life),
-              Math.max(0.15, life - age)
-            );
-          },
-          step: (i, dt, p) => {
-            const k = i * 3;
-            const hAboveRim = Math.max(0, p.pos[k + 1] - rim);
-            const umbrella = smooth(18, 65, hAboveRim) * 1.8 * INT;
-            p.vel[k] += dt * (2.2 * INT + (p.pos[k] + 50) * 0.03 * umbrella);
-            p.vel[k + 2] += dt * (0.85 * INT + (p.pos[k + 2] + 50) * 0.03 * umbrella);
-            p.vel[k + 1] *= Math.max(0.92, 1 - dt * 0.07);
-          }
-        });
-
-        // 5. Ballistic Lava Bombs
-        const bombMat = new THREE.MeshStandardMaterial({
-          color: 0xff9a22,
-          emissive: 0xff3b00,
-          emissiveIntensity: 2.3,
-          roughness: 0.22,
-          flatShading: true
-        });
-        c.bombMat = bombMat;
-        c.bombs = [];
-        c.launchBomb = (b, prewarmFrac = 0) => {
-          const ang = rand() * Math.PI * 2;
-          const hSpd = R(6.5, 19.5) * (0.65 + 0.45 * INT);
-          const vy0 = R(22, 36) * (0.65 + 0.45 * INT);
-          const vx = Math.cos(ang) * hSpd;
-          const vz = Math.sin(ang) * hSpd;
-          const sx = -50 + Math.cos(ang) * R(1.0, 4.2);
-          const sz = -50 + Math.sin(ang) * R(1.0, 4.2);
-          const sy = rim + 0.8;
-          const tArc = prewarmFrac * R(0.6, 2.2);
-          b.m.position.set(sx + vx * tArc, sy + vy0 * tArc - 0.5 * 20 * tArc * tArc, sz + vz * tArc);
-          b.v.set(vx, vy0 - 20 * tArc, vz);
-          b.baseScale = R(0.85, 1.65);
-          b.m.scale.setScalar(b.baseScale * (0.85 + 0.25 * INT));
-        };
-        for (let k = 0; k < 22; k++) {
-          const m = new THREE.Mesh(G.blob, bombMat);
-          modeGroup.add(m);
-          const b = { m, v: new THREE.Vector3(), rim, baseScale: 1.1 };
-          c.launchBomb(b, (k + 0.3) / 22);
-          c.bombs.push(b);
-        }
-
-        console.info('[Volcano] initialized');
-        console.info(`[Volcano] lava flows: ${c.flows.length}`);
-        console.info('[Volcano] ash system initialized');
-        console.info('[Volcano] lava bomb system initialized');
-        console.info('[Volcano] eruption update active');
-      },
-      postBuild(c) {
-        const [tx, tz] = this.town, half = this._townHalf, L = this._townLevel, rim = H(-50, -50) + 6;
-        // An extra flow steered towards the town's south-west corner, stopping just outside it.
-        const gx0 = tx - half - 6, gz0 = tz - half - 6, a0 = Math.atan2(gz0 + 50, gx0 + 50);
-        let x = -50 + Math.cos(a0) * 6.5, z = -50 + Math.sin(a0) * 6.5;
-        const pts = [];
-        for (let k = 0; k < 220; k++) {
-          pts.push(new THREE.Vector3(x, H(x, z) + 0.5, z));
-          const ex = gx0 - x, ez = gz0 - z, ed = Math.hypot(ex, ez);
-          if (ed < 4) break;
-          const gx = (H(x + 0.8, z) - H(x - 0.8, z)) / 1.6, gz = (H(x, z + 0.8) - H(x, z - 0.8)) / 1.6, g = Math.hypot(gx, gz) || 1;
-          let dx = 0.6 * ex / ed - 0.4 * gx / g, dz = 0.6 * ez / ed - 0.4 * gz / g;
-          const dl = Math.hypot(dx, dz) || 1;
-          dx /= dl;
-          dz /= dl;
-          x += dx * 1.4 + R(-0.25, 0.25);
-          z += dz * 1.4 + R(-0.25, 0.25);
-        }
-        c.townFlow = lavaFlow(new THREE.CatmullRomCurve3(pts), pts.length * 2, 1.8);
-        c.townFlow.town = true;
-        // Glowing advancing front on every flow.
-        const frontM = M(0xff7a20, { emissive: 0xff5000, emissiveIntensity: 1.9 });
-        [...c.flows, c.townFlow].forEach(f => {
-          f.front = new THREE.Mesh(G.blob, frontM);
-          modeGroup.add(f.front);
-        });
-        new Particles(180, {
-          color: 0xff8a2a, size: 1.3, opacity: 0.95, additive: true,
-          spawn: (i, p) => {
-            const f = pick([...c.flows, c.townFlow]);
-            const o = f.front.position;
-            if (f.draw > 0.02) p.set(i, o.x + R(-1.5, 1.5), o.y + R(0, 1), o.z + R(-1.5, 1.5), R(-1, 1), R(1, 3.5), R(-1, 1), R(0.4, 1.2));
-            else p.set(i, 0, -80, 0, 0, 0, 0, R(0.1, 0.3));
-          }
-        });
-
-        // Thick dark ash column that bends towards the town once it is high up.
-        new Particles(1100, {
-          color: 0x2a2624, size: 13, opacity: 0.45, prewarm: true,
-          spawn: (i, p) => p.set(i, -50 + R(-4, 4), rim + R(0, 4), -50 + R(-4, 4), R(-2, 2), R(14, 22), R(-2, 2), R(7, 12)),
-          step: (i, dt, p) => {
-            const k = i * 3;
-            p.vel[k + 1] *= 0.993;
-            // High up, the plume is carried towards the town, then spreads out and hangs over it.
-            if (p.pos[k + 1] - rim > 28 && p.pos[k] < tx && p.pos[k + 2] < tz) {
-              p.vel[k] += dt * 1.6 * INT;
-              p.vel[k + 2] += dt * 1.4 * INT;
-            } else if (p.pos[k] >= tx || p.pos[k + 2] >= tz) {
-              p.vel[k] *= 0.97;
-              p.vel[k + 2] *= 0.97;
-            }
-          }
-        });
-        // Ash falling over the town and the survivors.
-        const span = half * 2 + 50, ax = tx - 16, az = tz - 14;
-        c.ashFall = new Particles(1500, {
-          color: 0x46423f, size: 1.0, opacity: 0,
-          spawn: (i, p, init) => p.set(i, ax + R(-span / 2, span / 2), init ? R(L, L + 55) : L + R(45, 60), az + R(-span / 2, span / 2), 0, 0, 0, 1e9),
-          step: (i, _dt, p) => {
-            const k = i * 3;
-            p.vel[k] = 1.6 * INT + Math.sin(modeT * 1.1 + i) * 0.8;
-            p.vel[k + 1] = -(3.2 + (i % 7) * 0.35) * (0.7 + 0.3 * INT);
-            p.vel[k + 2] = 1.2 * INT + Math.cos(modeT * 0.9 + i) * 0.6;
-            if (p.pos[k + 1] < L) p.life[i] = 0;
-          }
-        });
-        // Ground near the town greys over as ash settles: terrain colours, town ground and roofs.
-        const pos = curTerrain.geometry.attributes.position, col = curTerrain.geometry.attributes.color;
-        c.ash = { idx: [], w: [], base: [], acc: 0, col: new THREE.Color(0x77736f) };
-        for (let i = 0; i < pos.count; i++) {
-          const e = Math.max(Math.abs(pos.getX(i) - tx), Math.abs(pos.getZ(i) - tz)) - half, w = smooth(36, 0, e);
-          if (w <= 0) continue;
-          c.ash.idx.push(i);
-          c.ash.w.push(w);
-          c.ash.base.push(new THREE.Color(col.getX(i), col.getY(i), col.getZ(i)));
-        }
-        c.ashMat = new THREE.MeshStandardMaterial({
-          color: 0x9a9692, transparent: true, opacity: 0, roughness: 1, depthWrite: false,
-          polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2
-        });
-        const pg = new THREE.PlaneGeometry(half * 2, half * 2);
-        pg.rotateX(-Math.PI / 2);
-        const layer = new THREE.Mesh(pg, c.ashMat);
-        layer.position.set(tx, L + 0.12, tz);
-        modeGroup.add(layer);
-        buildings.forEach(b => {
-          if (!b.mesh) return;
-          const cap = new THREE.Mesh(G.box, c.ashMat);
-          cap.scale.set(b.hw * 2 + 0.45, 0.05, b.hd * 2 + 0.45);
-          cap.position.set(b.x, b.top + 0.03, b.z);
-          modeGroup.add(cap);
-        });
-      },
-      update(dt, t, c) {
-        // 1. Animate Crater Lava Pool & Bubbling Magma Mounds
-        const poolPulse = 1 + Math.sin(t * 3.2 * INT) * 0.06 * INT;
-        c.pool.scale.setScalar(poolPulse);
-        c.pool.rotation.z = t * 0.22 * INT;
-        c.poolMat.emissiveIntensity = (1.55 + Math.sin(t * 4.5) * 0.4) * (0.7 + 0.45 * INT);
-
-        const corePulse = 1 + Math.cos(t * 4.8 * INT) * 0.1 * INT;
-        c.poolCore.scale.setScalar(corePulse);
-        c.poolCore.rotation.z = -t * 0.38 * INT;
-        c.coreMat.emissiveIntensity = (2.0 + Math.sin(t * 6.2 + 1) * 0.55) * (0.75 + 0.45 * INT);
-
-        for (const pb of c.poolBubbles) {
-          const w = 0.5 + 0.5 * Math.sin(t * pb.spd * INT + pb.phase);
-          pb.m.scale.set((0.8 + w * 1.1) * (0.8 + 0.25 * INT), (0.35 + w * 1.25) * INT, (0.8 + w * 1.1) * (0.8 + 0.25 * INT));
-          pb.m.position.y = c.poolY + 0.1 + w * 0.65 * INT;
-        }
-
-        // 2. Animate Five Downhill Lava Flows, Town-Facing Flow & Traveling Hot-Spot Surges
-        c.flowOffset = (c.flowOffset + dt * 0.18 * INT) % 1;
-        let instIdx = 0;
-        for (let fi = 0; fi < c.flows.length; fi++) {
-          const f = c.flows[fi];
-          const draw = Math.min(1, 0.74 + 0.26 * (0.5 + 0.5 * Math.sin(t * 0.45 * INT + f.delay * 4)));
-          f.draw = draw;
-          f.tube.geometry.setDrawRange(0, Math.floor((f.total * draw) / 36) * 36);
-          f.mat.emissiveIntensity = (1.35 + Math.sin(t * 3.4 * INT + f.delay * 10) * 0.45) * (0.7 + 0.45 * INT);
-          if (f.tex) f.tex.offset.x -= dt * 0.08 * INT;
-          if (f.front) {
-            f.front.visible = draw > 0.02;
-            if (f.front.visible) {
-              f.curve.getPointAt(draw, f.front.position);
-              const pulse = 1 + Math.sin(t * 5 + (f.delay || 0) * 7) * 0.12;
-              f.front.scale.set(f.r * 1.7 * pulse, f.r * 0.9 * pulse, f.r * 1.7 * pulse);
-            }
-          }
-
-          for (let si = 0; si < c.surgesPerFlow; si++) {
-            const u = (((si / c.surgesPerFlow) + c.flowOffset + f.delay * 0.7) % 1) * draw;
-            f.curve.getPointAt(u, c.samplePt);
-            const pulse = 0.85 + 0.3 * Math.sin(t * 5 + si * 1.3 + fi);
-            const sc = (1.55 - (u / Math.max(0.2, draw)) * 0.55) * pulse * (0.8 + 0.25 * INT);
-            _dummy.position.set(c.samplePt.x, c.samplePt.y + 0.32, c.samplePt.z);
-            _dummy.rotation.set(0, t * 1.5 + si, 0);
-            _dummy.scale.set(sc * 1.15, sc * 0.55, sc * 1.15);
-            _dummy.updateMatrix();
-            c.flowHotspots.setMatrixAt(instIdx++, _dummy.matrix);
-          }
-        }
-        if (c.townFlow) {
-          const tf = c.townFlow;
-          const p = Math.min(1, t * 0.018 * INT), draw = Math.min(1, p);
-          tf.draw = draw;
-          tf.tube.geometry.setDrawRange(0, Math.floor((tf.total * draw) / 36) * 36);
-          tf.mat.emissiveIntensity = 1.2 + Math.sin(t * 3) * 0.35;
-          if (tf.tex) tf.tex.offset.x -= dt * 0.08 * INT;
-          if (tf.front) {
-            tf.front.visible = draw > 0.02;
-            if (tf.front.visible) {
-              tf.curve.getPointAt(draw, tf.front.position);
-              const pulse = 1 + Math.sin(t * 5) * 0.12;
-              tf.front.scale.set(tf.r * 1.7 * pulse, tf.r * 0.9 * pulse, tf.r * 1.7 * pulse);
-            }
-          }
-        }
-        c.flowHotspots.instanceMatrix.needsUpdate = true;
-        c.surgeMat.emissiveIntensity = (1.9 + Math.sin(t * 5.5) * 0.5) * (0.75 + 0.45 * INT);
-
-        // Ashfall & ground/roof ash accumulation near town
-        if (c.ashFall && c.ashMat && c.ash) {
-          const ak = smooth(3, 55, t) * Math.min(1, 0.55 + 0.45 * INT);
-          c.ashFall.mat.opacity = 0.85 * smooth(1, 12, t);
-          c.ashMat.opacity = ak * 0.7;
-          c.ash.acc += dt;
-          if (c.ash.acc > 0.3) {
-            c.ash.acc = 0;
-            const col = curTerrain.geometry.attributes.color;
-            c.ash.idx.forEach((i, n) => {
-              _c2.copy(c.ash.base[n]).lerp(c.ash.col, c.ash.w[n] * ak * 0.9);
-              col.setXYZ(i, _c2.r, _c2.g, _c2.b);
-            });
-            col.needsUpdate = true;
-          }
-        }
-
-        // 3. Dynamic Crater PointLight Pulse
-        c.light.intensity = (2.8 + Math.sin(t * 7.5) * 0.75 + Math.cos(t * 13.2) * 0.35) * (0.65 + 0.55 * INT);
-
-        // 4. Update Plume Visual Density / Size with Intensity
-        if (c.plumeAsh && c.plumeAsh.mat) {
-          c.plumeAsh.mat.size = 9.5 + 2.8 * INT;
-          c.plumeAsh.mat.opacity = Math.min(0.88, 0.54 + 0.2 * INT);
-        }
-        if (c.plumeFire && c.plumeFire.mat) {
-          c.plumeFire.mat.size = 6.0 + 2.2 * INT;
-        }
-
-        // 5. Update Ballistic Lava Bombs
-        const activeBombs = Math.max(6, Math.min(c.bombs.length, Math.round(13 * INT)));
-        c.bombMat.emissiveIntensity = (1.85 + Math.sin(t * 8) * 0.45) * (0.75 + 0.4 * INT);
-        for (let i = 0; i < c.bombs.length; i++) {
-          const b = c.bombs[i];
-          if (i >= activeBombs) {
-            b.m.visible = false;
-            continue;
-          }
-          b.m.visible = true;
-          const p = b.m.position;
-          if (p.y < H(p.x, p.z)) {
-            c.launchBomb(b, 0);
-          }
-          b.v.y -= 20 * dt;
-          p.addScaledVector(b.v, dt);
-          b.m.rotation.x += dt * 4.5;
-          b.m.rotation.z += dt * 3.8;
-        }
-      },
-      status() {
-        return 'Eruption ongoing: ash column and lava flows advancing';
-      }
-    },
-    {
-      ...MODES_META[5],
+      seedIndex: 5,
       sky: 0x9fb6c4, fogNear: 90, fogFar: 330, hemiGround: 0x5a5a48,
       town: [-36, 0], townLevel: 5, townR: 42, safe: [-96, 62], camTarget: [-14, 0], camR: 168,
       raw: (x, z) => hills(x, z, 5) + 7 - smooth(-15, 75, x) * 24 + 16 * Math.exp(-(((x + 96) ** 2 + (z - 62) ** 2) / 900)),
@@ -3065,12 +2349,18 @@ export function createDisasterEngine(canvas, { onStatsUpdate, onEarthquakeUpdate
       postBuild(c) {
         makeWreck();
         buildings.forEach(rig);
-        c.prevCyc = 0;
+        c.phase = TSUNAMI_PHASES.NORMAL;
+        c.cityBounds = this.cityBounds || {
+          minX: this.town[0] - (this._townHalf || this.townR),
+          maxX: this.town[0] + (this._townHalf || this.townR),
+          minZ: this.town[1] - (this._townHalf || this.townR),
+          maxZ: this.town[1] + (this._townHalf || this.townR),
+        };
         this.planWave(c);
-        // Floodwater left standing over all the low land after the wave. It lies flat inland (hills poke out
-        // as islands) and thins into a sheet running back down to the sea. Slightly see-through so the
-        // survivors in the streets can still be made out under it.
-        const fg = new THREE.PlaneGeometry(W, W, 110, 110);
+
+        // Persistent inundation water surface covering the enlarged city and low coastal plain.
+        // Created once on mode init; separate from the temporary incoming tsunami wave (c.water).
+        const fg = new THREE.PlaneGeometry(W, W, 120, 120);
         fg.rotateX(-Math.PI / 2);
         const fp = fg.attributes.position;
         c.floodXs = new Float32Array(fp.count);
@@ -3081,111 +2371,338 @@ export function createDisasterEngine(canvas, { onStatsUpdate, onEarthquakeUpdate
           c.floodZs[i] = fp.getZ(i);
           c.floodHs[i] = H(fp.getX(i), fp.getZ(i));
         }
-        c.flood = new THREE.Mesh(fg, new THREE.MeshStandardMaterial({
-          color: 0x587078, transparent: true, opacity: 0.72, roughness: 0.25, metalness: 0.1, flatShading: true
+        c.persistentFloodWater = new THREE.Mesh(fg, new THREE.MeshStandardMaterial({
+          color: 0x366d7d,
+          transparent: true,
+          opacity: 0.84,
+          roughness: 0.22,
+          metalness: 0.14,
+          flatShading: true
         }));
-        c.flood.receiveShadow = true;
-        c.flood.visible = false;
-        modeGroup.add(c.flood);
+        c.persistentFloodWater.receiveShadow = true;
+        c.persistentFloodWater.visible = false;
+        modeGroup.add(c.persistentFloodWater);
+        c.flood = c.persistentFloodWater;
+
+        const k0 = clamp((INT - 0.3) / 1.5, 0, 1);
         c.floodLvl = 0;
+        c.targetFloodDepth = 1.65 + 1.75 * k0;
+        c.persistentFloodLevel = this.townLevel + c.targetFloodDepth;
+        c.currentWaterLevel = this.townLevel;
         c.floodEdge = 999;
+        c.waterTick = 0;
+
+        // Rooftop residents waving to rescue helicopters on tall standing buildings
+        const tallBlds = buildings.filter(b => b.mesh && b.fate !== 'fall').slice(0, 4);
+        tallBlds.forEach(b => {
+          addAgent('resident', b.x + R2(-1.2, 1.2), b.z + R2(-1.2, 1.2), { state: 'wave', fixedY: b.top });
+        });
+
+        // Second rescue helicopter patrolling directly over the flooded city
+        makeHeli(0xff8c1a, () => [-36, 0], 34, 48, -0.42);
+
+        // Rescue boats operating inside the flooded city once inundated
+        c.rescueBoats = [];
+        for (let k = 0; k < 2; k++) {
+          const g = new THREE.Group();
+          const hull = new THREE.Mesh(G.box, M(0xff8a1a));
+          hull.scale.set(3.6, 0.8, 1.7);
+          hull.castShadow = true;
+          g.add(hull);
+          [-0.8, 0.8].forEach(px => {
+            const p = makePerson('rescuer');
+            p.scale.setScalar(0.75);
+            p.position.set(px, -0.2, 0);
+            p.rotation.y = Math.PI / 2;
+            g.add(p);
+          });
+          g.visible = false;
+          modeGroup.add(g);
+          c.rescueBoats.push({
+            g,
+            x: this.town[0] + (k === 0 ? -12 : 14),
+            z: k === 0 ? -14 : 14,
+            heading: k * Math.PI,
+            speed: R2(4.2, 6.4),
+            turnDir: k === 0 ? 1 : -1,
+          });
+        }
+
+        // Controlled set of floating debris that remains on the persistent flood surface
+        const bounds = c.cityBounds;
+        const debrisColors = [0x7a5638, 0x8c6844, 0x9b9389, 0x6b4a2f, 0xe05a2b, 0xb0a698];
+        c.floatingDebris = [];
+        for (let k = 0; k < 26; k++) {
+          const m = new THREE.Mesh(G.box, M(pick2(debrisColors)));
+          const isPlank = k % 3 !== 0;
+          m.scale.set(
+            isPlank ? R2(1.1, 2.4) : R2(0.7, 1.4),
+            R2(0.18, 0.42),
+            isPlank ? R2(0.35, 0.75) : R2(0.7, 1.3)
+          );
+          m.castShadow = true;
+          m.visible = false;
+          modeGroup.add(m);
+          c.floatingDebris.push({
+            m,
+            x: R2(bounds.minX + 3, bounds.maxX + 4),
+            z: R2(bounds.minZ + 3, bounds.maxZ - 3),
+            vx: R2(-0.45, 0.45),
+            vz: R2(-0.45, 0.45),
+            phase: R2(0, 6.28),
+            spin: R2(-0.35, 0.35),
+          });
+        }
       },
-      // Decides, from the Intensity slider, which buildings this wave will flatten, which it damages and
-      // which it only floods. Buildings nearest the sea (largest x) are the most likely to fall.
+      // Decides, from the Intensity slider, which coastal frontline buildings collapse, which tilt/crack,
+      // and which remain upright with their lower stories submerged in the persistent floodwater.
       planWave(c) {
         const list = buildings.filter(b => b.rig), N = list.length, k = clamp((INT - 0.3) / 1.5, 0, 1);
-        const frac = k < 0.5 ? 0.03 + 0.94 * k : 0.5 + (k - 0.5);
-        const K = Math.min(N - 2, Math.round(frac * N)), D = Math.min(N, K + Math.round((0.18 + 0.27 * k) * N));
+        const collapseFrac = 0.08 + 0.24 * k;
+        const K = Math.min(Math.floor(N * 0.35), Math.round(collapseFrac * N));
+        const D = Math.min(N, K + Math.round((0.25 + 0.25 * k) * N));
         const xs = list.map(b => b.x), x0 = Math.min(...xs), span = Math.max(1, Math.max(...xs) - x0);
-        list.forEach(b => (b.seaScore = (b.x - x0) / span + R(-0.2, 0.2)));
-        list.sort((a, b) => b.seaScore - a.seaScore).forEach((b, i) => (b.fate = i < K ? 'fall' : i < D ? 'damage' : 'wet'));
+        list.forEach(b => {
+          if (b.seaScore === undefined) b.seaScore = (b.x - x0) / span + R2(-0.18, 0.18);
+        });
+        list.slice().sort((a, b) => b.seaScore - a.seaScore).forEach((b, i) => {
+          b.fate = i < K ? 'fall' : i < D ? 'damage' : 'wet';
+        });
         c.planInt = INT;
         c.planK = K;
         c.planN = N;
       },
       update(_dt, t, c) {
-        // Below 1x the wave is smaller but still tops the seawall, so it always reaches the town.
-        const cyc = t % 24, A0 = Math.max(9 * INT, 6.4 + 2.6 * INT);
-        c.active = cyc < 16;
-        c.wx = c.active ? 130 - (cyc / 16) * 240 : -200;
-        c.cyc = cyc;
-        const rec = c.active ? 1 : Math.max(0, 1 - (cyc - 16) / 6), wx = c.wx;
-        const amp = x => A0 * (0.5 + 0.5 * smooth(110, 10, x));
+        const L = this.townLevel;
+        const bounds = c.cityBounds || this.cityBounds || { minX: -78, maxX: 6, minZ: -42, maxZ: 42 };
+        const k = clamp((INT - 0.3) / 1.5, 0, 1);
+        const f = 0.6 + 0.6 * k;
+
+        // Target persistent flood level: 1.65m (low) -> 2.47m (1x) -> 3.40m (1.8x) above street level (L=5.0)
+        c.targetFloodDepth = 1.65 + 1.75 * k;
+        c.persistentFloodLevel = L + c.targetFloodDepth;
+
+        if (INT !== c.planInt) {
+          this.planWave(c);
+        }
+
+        // Tsunami state machine: NORMAL -> RECESSION -> WAVE_APPROACHING -> INUNDATING -> PERSISTENT_INUNDATION
+        const waveStartT = 2.0;
+        const waveDuration = 9.5 / (0.85 + 0.15 * INT);
+        const waveProgress = t < waveStartT ? 0 : clamp((t - waveStartT) / waveDuration, 0, 1);
+        const A0 = Math.max(9.5 * INT, 6.8 + 2.8 * INT);
+
+        if (c.phase !== TSUNAMI_PHASES.PERSISTENT_INUNDATION) {
+          if (t < 0.8) {
+            c.phase = TSUNAMI_PHASES.NORMAL;
+            c.active = false;
+            c.wx = 140;
+          } else if (t < waveStartT) {
+            c.phase = TSUNAMI_PHASES.RECESSION;
+            c.active = false;
+            c.wx = 132;
+          } else {
+            c.wx = 132 - waveProgress * 292; // 132 -> -160
+            c.active = waveProgress < 0.98;
+            if (c.wx > bounds.maxX + 14) {
+              c.phase = TSUNAMI_PHASES.WAVE_APPROACHING;
+            } else if (c.wx > bounds.minX - 18 || c.floodLvl < 0.98) {
+              c.phase = TSUNAMI_PHASES.INUNDATING;
+            } else {
+              c.phase = TSUNAMI_PHASES.PERSISTENT_INUNDATION;
+            }
+          }
+        } else {
+          // Hold permanently in PERSISTENT_INUNDATION until user explicitly resets or switches mode
+          c.wx = -165;
+          c.active = false;
+          c.floodLvl = 1.0;
+          c.floodEdge = -200;
+        }
+
+        const wx = c.wx;
+        const waveEnv = c.phase === TSUNAMI_PHASES.PERSISTENT_INUNDATION
+          ? Math.max(0, 1 - smooth(0.82, 1.0, waveProgress))
+          : (t >= waveStartT ? smooth(waveStartT, waveStartT + 1.0, t) : 0);
+        const recPull = c.phase === TSUNAMI_PHASES.RECESSION
+          ? smooth(0.8, 1.9, t)
+          : (c.phase === TSUNAMI_PHASES.WAVE_APPROACHING ? Math.max(0, 1 - waveProgress * 2.2) : 0);
+
+        const amp = x => A0 * (0.5 + 0.5 * smooth(115, 10, x)) * waveEnv;
         c.crest = x => amp(x);
-        const fn = (x, z) => {
+        const seaFn = (x, z) => {
           const w = wx + Math.sin(z * 0.05 + 1) * 5;
-          let y = amp(x) * Math.exp(-(((x - w) / 7) ** 2));
-          y += A0 * 0.35 * smooth(w, w + 20, x) * rec;
-          if (c.active) y -= 1.6 * Math.exp(-(((x - w + 28) / 16) ** 2));
+          let y = amp(x) * Math.exp(-(((x - w) / 7.5) ** 2));
+          y += A0 * 0.35 * smooth(w, w + 22, x) * waveEnv;
+          if (recPull > 0) {
+            y -= 2.2 * recPull * Math.exp(-(((x - 42) / 26) ** 2));
+          }
+          if (waveEnv > 0.05) {
+            y -= 1.6 * waveEnv * Math.exp(-(((x - w + 28) / 16) ** 2));
+          }
           return y + Math.sin(x * 0.2 + t * 1.5) * 0.15 + Math.sin(z * 0.17 + t) * 0.1;
         };
-        updateWater(c.water, fn);
-        for (const b of c.boats) {
-          b.g.position.set(b.x, fn(b.x, b.z) + 0.3, b.z);
-          b.g.rotation.z = Math.sin(t * 1.5 + b.z) * 0.08;
-        }
-        const k = clamp((INT - 0.3) / 1.5, 0, 1), f = 0.6 + 0.6 * k;
-        if (cyc < c.prevCyc) {
-          // New wave: the town is rebuilt and the damage is planned for the current intensity.
-          resetWreck();
-          buildings.forEach(b => {
-            b.wet = false;
-            b.tcol = 0;
-          });
-          this.planWave(c);
-          c.draining = true;
-        } else if (INT !== c.planInt && !buildings.some(b => b.wet)) this.planWave(c);
-        c.prevCyc = cyc;
-        // The floodwater follows the wave front inland, stays after the wave goes back out,
-        // and drains when the next wave cycle rebuilds the town.
-        const L = this.townLevel, depth = 0.7 + 0.4 * k;
-        if (c.active && wx < 60) {
-          c.draining = false;
+        updateWater(c.water, seaFn);
+
+        // Update persistent inundation water level (never drains automatically)
+        if (c.phase === TSUNAMI_PHASES.INUNDATING) {
           c.floodEdge = Math.min(c.floodEdge, wx);
-          if (wx < this.town[0] + this._townHalf + 4) c.floodLvl = Math.min(1, c.floodLvl + _dt * 1.2);
-        } else if (c.draining) {
-          c.floodLvl = Math.max(0, c.floodLvl - _dt * 0.8);
-          if (c.floodLvl === 0) {
-            c.draining = false;
-            c.floodEdge = 999;
-          }
+          c.floodLvl = Math.min(1.0, c.floodLvl + _dt * 0.45);
+          const targetWaterY = L + 0.25 + (c.persistentFloodLevel - (L + 0.25)) * c.floodLvl;
+          c.currentWaterLevel += (targetWaterY - c.currentWaterLevel) * Math.min(1, _dt * 3.8);
+        } else if (c.phase === TSUNAMI_PHASES.PERSISTENT_INUNDATION) {
+          c.floodLvl = 1.0;
+          c.floodEdge = -200;
+          c.currentWaterLevel += (c.persistentFloodLevel - c.currentWaterLevel) * Math.min(1, _dt * 3.5);
+        } else if (wx < 52) {
+          c.floodEdge = Math.min(c.floodEdge, wx);
+          c.floodLvl = Math.min(0.25, c.floodLvl + _dt * 0.35);
+          c.currentWaterLevel = L + 0.25 * (c.floodLvl / 0.25);
         }
-        c.flood.visible = c.floodLvl > 0;
-        if (c.flood.visible) {
-          const arr = c.flood.geometry.attributes.position.array, lv = c.floodLvl;
-          const flat = L - 0.8 + (depth + 0.8) * lv;
+
+        curMode._waterLevel = c.floodLvl > 0 ? c.currentWaterLevel : 0;
+        c.persistentFloodWater.visible = c.floodLvl > 0;
+
+        const floodSurfaceAt = (x, z) => {
+          const lv = c.floodLvl;
+          const flat = Math.max(L + 0.22, c.currentWaterLevel);
+          const rip =
+            Math.sin(x * 0.26 + t * 1.7) * 0.075 +
+            Math.cos(z * 0.22 - t * 1.3) * 0.065 +
+            Math.sin((x + z) * 0.16 + t * 2.1) * 0.04;
+          const coastBlend = smooth(bounds.maxX + 8, bounds.maxX + 50, x);
+          const h = H(x, z);
+          const coastalSheet = h + (0.35 + 0.45 * k) * lv;
+          return flat * (1 - coastBlend) + coastalSheet * coastBlend + rip;
+        };
+
+        if (c.persistentFloodWater.visible) {
+          const arr = c.persistentFloodWater.geometry.attributes.position.array;
+          const lv = c.floodLvl;
+          const flat = Math.max(L + 0.22, c.currentWaterLevel);
           for (let i = 0; i < c.floodXs.length; i++) {
             const x = c.floodXs[i], z = c.floodZs[i], h = c.floodHs[i];
-            const rip = Math.sin(x * 0.4 + t * 1.6) * 0.04 + Math.sin(z * 0.33 + t * 1.1) * 0.03;
-            const sheet = h + (0.25 + (depth - 0.25) * (1 - smooth(8, 50, x))) * lv;
-            const b = smooth(0, 14, x);
-            let y = flat * (1 - b) + sheet * b + rip;
-            const passed = x > c.floodEdge + Math.sin(z * 0.05 + 1) * 5 - 2;
-            if (!passed || y < h + 0.05 || h < -0.6) y = h - 0.6;
+            const rip =
+              Math.sin(x * 0.26 + t * 1.7) * 0.075 +
+              Math.cos(z * 0.22 - t * 1.3) * 0.065 +
+              Math.sin((x + z) * 0.16 + t * 2.1) * 0.04;
+            const coastBlend = smooth(bounds.maxX + 8, bounds.maxX + 50, x);
+            const coastalSheet = h + (0.35 + 0.45 * k) * lv;
+            let y = flat * (1 - coastBlend) + coastalSheet * coastBlend + rip;
+            const passed = x >= c.floodEdge + Math.sin(z * 0.05 + 1) * 4.5 - 2;
+            if (!passed || y < h + 0.12 || h < -0.6) y = h - 0.6;
             arr[i * 3 + 1] = y;
           }
-          c.flood.geometry.attributes.position.needsUpdate = true;
-          c.flood.geometry.computeVertexNormals();
+          c.persistentFloodWater.geometry.attributes.position.needsUpdate = true;
+          if ((c.waterTick = ((c.waterTick || 0) + 1) & 1) === 0) {
+            c.persistentFloodWater.geometry.computeVertexNormals();
+          }
         }
+
+        // Keep coastal vessels on the sea/flood surface
+        for (const b of c.boats) {
+          const seaY = seaFn(b.x, b.z);
+          const flY = c.floodLvl > 0 && b.x >= c.floodEdge ? floodSurfaceAt(b.x, b.z) : -99;
+          b.g.position.set(b.x, Math.max(seaY, flY) + 0.3, b.z);
+          b.g.rotation.z = Math.sin(t * 1.5 + b.z) * 0.08;
+        }
+
+        // Patrol rescue boats through the flooded city streets around standing buildings
+        if (c.rescueBoats) {
+          for (const rb of c.rescueBoats) {
+            const activeBoat = c.floodLvl > 0.3 && rb.x >= c.floodEdge;
+            rb.g.visible = activeBoat;
+            if (!activeBoat) continue;
+            const stepDist = rb.speed * _dt;
+            const nx = rb.x + Math.cos(rb.heading) * stepDist;
+            const nz = rb.z + Math.sin(rb.heading) * stepDist;
+            let isBlocked = false;
+            for (const bld of buildings) {
+              const hw = (bld.hw || 3) + 2.2;
+              const hd = (bld.hd || 3) + 2.2;
+              if (nx >= bld.x - hw && nx <= bld.x + hw && nz >= bld.z - hd && nz <= bld.z + hd) {
+                isBlocked = true;
+                break;
+              }
+            }
+            if (nx < bounds.minX + 3 || nx > bounds.maxX - 3 || nz < bounds.minZ + 3 || nz > bounds.maxZ - 3) {
+              isBlocked = true;
+            }
+            if (isBlocked) {
+              rb.heading += 1.35 * rb.turnDir;
+            } else {
+              rb.x = nx;
+              rb.z = nz;
+            }
+            rb.g.position.set(rb.x, floodSurfaceAt(rb.x, rb.z) + 0.28, rb.z);
+            rb.g.rotation.y = -rb.heading + Math.PI / 2;
+            rb.g.rotation.z = Math.sin(t * 1.8 + rb.x) * 0.06;
+          }
+        }
+
+        // Animate floating debris across the persistent city flood surface
+        if (c.floatingDebris) {
+          for (const d of c.floatingDebris) {
+            const activeDebris = c.floodLvl > 0.15 && d.x >= c.floodEdge;
+            d.m.visible = activeDebris;
+            if (!activeDebris) continue;
+            let nx = d.x + (d.vx + Math.sin(t * 0.7 + d.phase) * 0.25) * _dt;
+            let nz = d.z + (d.vz + Math.cos(t * 0.6 + d.phase) * 0.25) * _dt;
+            if (nx < bounds.minX - 6 || nx > bounds.maxX + 8) {
+              d.vx = -d.vx;
+              nx = clamp(nx, bounds.minX - 6, bounds.maxX + 8);
+            }
+            if (nz < bounds.minZ - 6 || nz > bounds.maxZ + 6) {
+              d.vz = -d.vz;
+              nz = clamp(nz, bounds.minZ - 6, bounds.maxZ + 6);
+            }
+            d.x = nx;
+            d.z = nz;
+            const wy = floodSurfaceAt(d.x, d.z);
+            d.m.position.set(d.x, wy + 0.06 + Math.sin(t * 2.3 + d.phase) * 0.04, d.z);
+            d.m.rotation.x = Math.sin(t * 1.6 + d.phase) * 0.12;
+            d.m.rotation.z = Math.cos(t * 1.4 + d.phase) * 0.12;
+            d.m.rotation.y += _dt * d.spin;
+          }
+        }
+
+        // Keep street survivors floating at the persistent floodwater surface so their beacons remain visible
+        if (c.floodLvl > 0) {
+          for (const v of victimList) {
+            if (v.fixedY !== undefined) continue;
+            if (v.x >= c.floodEdge) {
+              const wy = floodSurfaceAt(v.x, v.z);
+              const baseH = H(v.x, v.z) + 0.05;
+              v.g.position.y = Math.max(baseH, wy - 0.12 + Math.sin(t * 2.2 + v.phase) * 0.05);
+            }
+          }
+        }
+
+        // Structural impact when the wave front reaches each building (never auto-resets)
         let down = 0;
+        const waveFrontActive =
+          c.phase === TSUNAMI_PHASES.WAVE_APPROACHING ||
+          c.phase === TSUNAMI_PHASES.INUNDATING ||
+          c.phase === TSUNAMI_PHASES.PERSISTENT_INUNDATION;
         for (const b of buildings) {
           if (!b.rig) continue;
-          // Damage starts only when the wave front actually reaches this building.
-          if (!b.wet && c.active && wx + Math.sin(b.z * 0.05 + 1) * 5 < b.x + b.hw + 1) {
+          if (!b.wet && waveFrontActive && wx + Math.sin(b.z * 0.05 + 1) * 5 < b.x + b.hw + 1) {
             b.wet = true;
             if (b.fate === 'fall') {
-              b.offGoal.set(-R(0.8, 2.4) * f, 0, R(-0.4, 0.4) * f);
-              b.tg.set(R(-0.06, 0.06) * f, R(0.1, 0.25) * f);
+              b.offGoal.set(-R2(0.8, 2.4) * f, 0, R2(-0.4, 0.4) * f);
+              b.tg.set(R2(-0.06, 0.06) * f, R2(0.1, 0.25) * f);
               crack(b, 3, -1, 0);
-              b.tcol = t + 0.45 + R(0, 0.25); // pushed and tilted first, then it gives way
+              b.tcol = t + 0.45 + R2(0, 0.25);
             } else if (b.fate === 'damage') {
-              b.offGoal.set(-R(0.3, 1.2) * f, 0, R(-0.25, 0.25) * f);
-              b.tg.set(R(-0.04, 0.04) * f, R(0.05, 0.16) * f);
+              b.offGoal.set(-R2(0.3, 1.2) * f, 0, R2(-0.25, 0.25) * f);
+              b.tg.set(R2(-0.04, 0.04) * f, R2(0.05, 0.16) * f);
               crack(b, 2, -1, 0);
-            } else b.offGoal.set(-R(0, 0.3), 0, 0);
+            } else {
+              b.offGoal.set(-R2(0, 0.25), 0, 0);
+            }
           }
           if (b.tcol && t >= b.tcol) {
-            collapse(b, -1, R(-0.3, 0.3));
+            collapse(b, -1, R2(-0.3, 0.3));
             b.tcol = 0;
           }
           if (b.state !== 'ok') down++;
@@ -3194,64 +2711,164 @@ export function createDisasterEngine(canvas, { onStatsUpdate, onEarthquakeUpdate
       },
       status(c) {
         const lost = c.down ? `, ${c.down} of ${c.planN} buildings collapsed` : '';
-        if (!c.active) return `Water receding from the coast${lost}`;
-        return (c.wx > 55 ? 'Sea pulling back from the shore' : c.wx > -5 ? 'Wave reaching the coast' : 'Water surging inland') + lost;
+        const floodDepth = Math.max(0, (c.currentWaterLevel || this.townLevel) - this.townLevel).toFixed(1);
+        if (c.phase === TSUNAMI_PHASES.NORMAL) {
+          return 'Normal coastal conditions — offshore tsunami warning issued';
+        }
+        if (c.phase === TSUNAMI_PHASES.RECESSION) {
+          return 'Sea pulling back from the shore — tsunami wave forming';
+        }
+        if (c.phase === TSUNAMI_PHASES.WAVE_APPROACHING) {
+          return (c.wx > 40 ? 'Tsunami wave approaching the coast' : 'Wave reaching the coastal seawall') + lost;
+        }
+        if (c.phase === TSUNAMI_PHASES.INUNDATING) {
+          return `Water surging into city — flood depth ${floodDepth} m${lost}`;
+        }
+        return `City inundated — persistent flood ${floodDepth} m above street level${lost}`;
       }
     },
     {
-      ...MODES_META[6],
+      ...MODES_META[4],
+      seedIndex: 6,
       sky: 0xa9b4ba, fogNear: 80, fogFar: 320, hemiGround: 0x54483a,
-      town: [0, 46], townR: 54, safe: [-82, 74], camTarget: [0, 12], camR: 170,
+      town: [0, 46], townR: 54, safe: [-82, 74], camTarget: [0, 2], camR: 165,
       raw: (x, z) => {
-        const m = smooth(-12, -85, z);
-        let h = hills(x, z, 5) + m * 58 + (fbm(x * 0.05, z * 0.05) - 0.5) * 10 * m;
-        h -= 5 * Math.exp(-((x / 18) ** 2)) * smooth(-2, -30, z) * (1 - smooth(-70, -92, z));
+        const m = smooth(-6, -100, z);
+        let h = hills(x, z, 5) + m * 60 + (fbm(x * 0.05, z * 0.05) - 0.5) * 10 * m;
+        h -= 6.5 * Math.exp(-((x / 20) ** 2)) * smooth(6, -24, z) * (1 - smooth(-80, -104, z));
         return h;
       },
       color(c, x, y, z, s) {
         natural(c, x, y, z, s, {});
-        const k = smooth(26, 15, Math.abs(x)) * smooth(12, 4, z) * smooth(-95, -85, z);
-        _c2.set(0x6b4f35);
-        c.lerp(_c2, k * 0.9);
+        const k = smooth(30, 14, Math.abs(x)) * smooth(16, -2, z) * smooth(-98, -86, z);
+        _c2.set(0x63472e);
+        c.lerp(_c2, k * 0.92);
       },
       build(c) {
-        // Buildings beside the slide start standing; boulders damage them live.
-        const inSlide = (x, z) => z < 16 && Math.abs(x) < 34;
-        addTown(0, 46, this._townLevel, { damage: (x, z) => (inSlide(x, z) ? 0.9 : 0.08), intact: inSlide });
+        // Buildings along the northern slide channel edge start standing and take live boulder/mud damage.
+        const inSlide = (x, z) => z < 20 && Math.abs(x) < 34;
+        addTown(0, 46, this._townLevel, { damage: (x, z) => (inSlide(x, z) ? 0.9 : 0), intact: inSlide });
         c.trees = addTrees(110, (x, z) => okTree(x, z) && (Math.abs(x) > 28 || z > 12));
         makeVehicle(0xe8b820, [0xffb000, 0xffb000], -57, 20, 0);
         makeVehicle(0xf4f4f4, [0xff2a2a, 0x2a6bff], 57, 28, Math.PI);
+
+        // Single reusable boulder system (~40 boulders)
+        const rockCols = [0x7b7066, 0x6a5f55, 0x8a7f72, 0x6b5038, 0x5a4330];
         c.rocks = [];
-        for (let k = 0; k < 44; k++) {
-          const s = R(0.8, 3), m = new THREE.Mesh(G.rock, M(pick([0x7b7066, 0x6a5f55, 0x8a7f72])));
+        const BOULDER_COUNT = 40;
+        for (let k = 0; k < BOULDER_COUNT; k++) {
+          const s = R(1.1, 3.1);
+          const m = new THREE.Mesh(G.rock, M(pick(rockCols)));
           m.scale.setScalar(s);
           m.castShadow = true;
           modeGroup.add(m);
-          const r = { m, s, x: 0, z: 0, vx: 0, vz: 0, rest: R(0, 6), stopZ: 0 };
+          const r = {
+            m,
+            s,
+            x: 0,
+            y: 0,
+            z: 0,
+            vx: 0,
+            vy: 0,
+            vz: 0,
+            dirX: 0,
+            dirZ: 1,
+            angVx: 0,
+            angVy: 0,
+            angVz: 0,
+            spinBias: R(-0.6, 0.6),
+            spdK: R(0.88, 1.16),
+            hopTimer: R(0.1, 0.55),
+            bounced: false,
+            active: true,
+            state: 'move',
+            rest: 0,
+            stopZ: 12,
+            targetX: 0,
+            slow: 0,
+            lastHit: null
+          };
           c.rocks.push(r);
-          this.respawnRock(r);
-          r.z = R(-88, 0);
+          this.respawnRock(r, k, BOULDER_COUNT, true);
         }
-        const moving = () => c.rocks.filter(r => r.rest <= 0);
-        c.dust = new Particles(500, {
-          color: 0x8a7258, size: 4, opacity: 0.3,
-          spawn: (i, p) => {
-            const mv = moving();
+
+        const movingRocks = () => c.rocks.filter(r => r.active && r.state === 'move');
+        c.dust = new Particles(650, {
+          color: 0x9c8266,
+          size: 5.8,
+          opacity: 0.45,
+          prewarm: true,
+          spawn: (i, p, init) => {
+            if (c.slideState && c.slideState !== 'running') {
+              p.set(i, 0, -80, 0, 0, 0, 0, R(0.1, 0.3));
+              return;
+            }
+            const mv = movingRocks();
             if (mv.length) {
               const r = pick(mv);
-              p.set(i, r.x + R(-1, 1), r.m.position.y, r.z + R(-1, 1), R(-1, 1), R(1, 3), R(-1, 1), R(1.5, 3));
-            } else p.set(i, 0, -80, 0, 0, 0, 0, R(0.1, 0.3));
+              const boost = r.bounced ? 1.45 : 1.0;
+              const vx = r.vx * 0.2 + R(-1.8, 1.8) * boost;
+              const vy = R(1.4, 3.8) * boost * (0.75 + 0.35 * INT);
+              const vz = r.vz * 0.2 + R(-1.2, 2.0) * boost;
+              const life = R(1.4, 2.8);
+              const age = init ? rand() * life * 0.6 : 0;
+              const bx = r.x + R(-r.s * 0.9, r.s * 0.9) + vx * age;
+              const bz = r.z + R(-r.s * 0.9, r.s * 0.9) + vz * age;
+              const by = H(bx, bz) + R(0.2, 1.2) + vy * age;
+              p.set(i, bx, by, bz, vx, vy, vz, Math.max(0.15, life - age));
+            } else {
+              p.set(i, 0, -80, 0, 0, 0, 0, R(0.1, 0.3));
+            }
+          },
+          step: (i, dt, p) => {
+            const k = i * 3;
+            p.vel[k] *= Math.max(0.9, 1 - dt * 0.45);
+            p.vel[k + 1] *= Math.max(0.9, 1 - dt * 0.35);
+            p.vel[k + 2] *= Math.max(0.9, 1 - dt * 0.45);
           }
         });
       },
-      respawnRock(r) {
-        // F1: Spread boulders across the entire observation area (reproducible seeded range)
-        r.x = R(-50, 50);
-        r.z = R(-95, -60);
-        r.vx = R(-2, 2);
-        r.vz = 0;
-        r.stopZ = R(15, 95);
+      respawnRock(r, idx = 0, total = 40, initial = false) {
+        if (initial) {
+          // Stagger boulders along the mountainside channel so the slide is visibly active at t=0
+          const u = (idx + R(0.1, 0.9)) / Math.max(1, total);
+          r.z = -86 + u * 92;
+          const chanHalf = 17 + smooth(-85, 8, r.z) * 6;
+          r.x = R(-chanHalf, chanHalf);
+          r.rest = idx % 8 === 0 ? R(0.15, 0.85) : 0;
+        } else {
+          // Spawn inside upper/mid mountain landslide channel above the town
+          r.x = R(-19, 19);
+          r.z = R(-88, -56);
+          r.rest = 0;
+        }
+        r.targetX = clamp(r.x * 0.85 + R(-7, 7), -26, 26);
+        r.stopZ = R(4, 26);
+        const eps = 0.8;
+        const gx = (H(r.x + eps, r.z) - H(r.x - eps, r.z)) / (2 * eps);
+        const gz = (H(r.x, r.z + eps) - H(r.x, r.z - eps)) / (2 * eps);
+        let dx = -gx;
+        let dz = Math.max(0.35, -gz);
+        const dLen = Math.hypot(dx, dz) || 1;
+        dx /= dLen;
+        dz /= dLen;
+        const v0 = (initial ? R(6.5, 12.5) : R(4.5, 8.5)) * (0.65 + 0.4 * INT);
+        r.vx = dx * v0 + R(-0.8, 0.8);
+        r.vz = Math.max(3.8, dz * v0);
+        r.vy = 0;
+        r.dirX = dx;
+        r.dirZ = dz;
+        r.angVx = (r.vz / r.s) * 1.15;
+        r.angVy = (v0 / r.s) * r.spinBias;
+        r.angVz = -(r.vx / r.s) * 1.15;
+        r.y = H(r.x, r.z) + r.s * 0.68;
+        r.hopTimer = R(0.1, 0.55);
+        r.bounced = false;
+        r.slow = 0;
         r.lastHit = null;
+        r.active = r.rest <= 0;
+        r.state = r.active ? 'move' : 'wait';
+        r.m.position.set(r.x, r.y, r.z);
       },
       postBuild(c) {
         makeWreck();
@@ -3260,7 +2877,7 @@ export function createDisasterEngine(canvas, { onStatsUpdate, onEarthquakeUpdate
         buildings.forEach(b => {
           if (!b.mesh) return;
           rig(b);
-          if (Math.abs(b.x) < 52 && b.z < 30) {
+          if (Math.abs(b.x) < 34 && b.z < 24) {
             b.town = true;
             c.dmg.push(b);
           }
@@ -3286,7 +2903,9 @@ export function createDisasterEngine(canvas, { onStatsUpdate, onEarthquakeUpdate
           modeGroup.add(mesh);
           const b = { x, z, hw: w / 2, hd: d / 2, top: hi + h + 0.35, mesh, roof, hill: true };
           rig(b);
-          c.dmg.push(b);
+          if (Math.abs(x) < 30) {
+            c.dmg.push(b);
+          }
           c.hill.push(b);
         };
         // Along and beside the slide path...
@@ -3307,28 +2926,13 @@ export function createDisasterEngine(canvas, { onStatsUpdate, onEarthquakeUpdate
           added++;
         }
         c.dmg.forEach(b => {
-          b.fragK = b.hill ? R(0.85, 1.3) : R(0.35, 1.15);
+          b.fragK = b.hill ? R(0.85, 1.3) : R(0.45, 1.15);
           b.side = rand() < 0.5 ? -1 : 1;
         });
 
-        // A much bigger slide: the original boulders plus more rocks and mud lumps across a wide slip zone.
-        const cols = [0x7b7066, 0x6a5f55, 0x8a7f72, 0x6b5038, 0x5a4330];
-        for (let k = 0; k < 80; k++) {
-          const s = k < 50 ? R(0.7, 2.6) : R(1.2, 3.4), m = new THREE.Mesh(G.rock, M(pick(cols)));
-          m.scale.setScalar(s);
-          m.castShadow = true;
-          modeGroup.add(m);
-          c.rocks.push({ m, s, x: 0, z: 0, vx: 0, vz: 0 });
-        }
-        c.rocks.forEach(r => {
-          r.hx = R(-46, 46);
-          r.hz = R(-93, -76);
-          r.delay = R(0, 9);
-          r.stopZ = R(-4, 22);
-        });
-        c.halfW = z => 26 + (z + 95) * 0.17;
+        c.halfW = z => 22 + (z + 95) * 0.12;
 
-        // Mud sheet draped on the terrain; it spreads down behind the slide front.
+        // Mud sheet draped on the terrain; it spreads down along the slide channel.
         const mg = new THREE.PlaneGeometry(112, 120, 56, 60);
         mg.rotateX(-Math.PI / 2);
         mg.translate(0, 0, -35);
@@ -3350,53 +2954,70 @@ export function createDisasterEngine(canvas, { onStatsUpdate, onEarthquakeUpdate
         c.mud.receiveShadow = true;
         modeGroup.add(c.mud);
 
-        // Dust and mud spray come only from rocks that are moving.
-        const mv = () => c.rocks.filter(r => r.state === 'move');
-        c.dust.o.spawn = (i, p) => {
-          const m = mv();
-          if (m.length) {
-            const r = pick(m);
-            p.set(i, r.x + R(-1, 1), r.m.position.y, r.z + R(-1, 1), R(-1, 1), R(1, 3), R(-1, 1), R(1.5, 3));
-          } else p.set(i, 0, -80, 0, 0, 0, 0, R(0.1, 0.3));
-        };
-        new Particles(420, {
-          color: 0x5e4630, size: 1.6, opacity: 0.85,
+        // Soil and rock debris spray kicked up by moving/bouncing boulders
+        const mv = () => c.rocks.filter(r => r.active && r.state === 'move');
+        c.spray = new Particles(420, {
+          color: 0x5e4630,
+          size: 2.0,
+          opacity: 0.85,
+          prewarm: true,
           spawn: (i, p) => {
+            if (c.slideState && c.slideState !== 'running') {
+              p.set(i, 0, -80, 0, 0, 0, 0, R(0.1, 0.3));
+              return;
+            }
             const m = mv();
             if (m.length) {
               const r = pick(m);
-              p.set(i, r.x + R(-1.5, 1.5), r.m.position.y, r.z + R(-1.5, 1.5), R(-2, 2) + r.vx * 0.3, R(2, 5), R(-1, 2) + r.vz * 0.3, R(0.5, 1.2));
-            } else p.set(i, 0, -80, 0, 0, 0, 0, R(0.1, 0.3));
+              p.set(
+                i,
+                r.x + R(-1.5, 1.5),
+                r.y,
+                r.z + R(-1.5, 1.5),
+                R(-2.2, 2.2) + r.vx * 0.25,
+                R(2.2, 5.5) * (0.75 + 0.3 * INT),
+                R(-1.2, 2.2) + r.vz * 0.25,
+                R(0.5, 1.2)
+              );
+            } else {
+              p.set(i, 0, -80, 0, 0, 0, 0, R(0.1, 0.3));
+            }
           },
           step: (i, dt, p) => {
             p.vel[i * 3 + 1] -= dt * 14;
           }
         });
+
         this.resetSlide(c);
+        console.info('[Landslide] initialized');
+        console.info(`[Landslide] boulders: ${c.rocks.length}`);
+        console.info('[Landslide] spawn area: x=[-19..19], z=[-88..-56]');
+        console.info('[Landslide] city target: x=[-26..26], z=[-8..26]');
+        console.info('[Landslide] update active');
       },
-      // Puts every rock back in the slip zone at the top, clears the mud and rebuilds every building.
+      // Resets and starts the active landslide with staggered boulders along the channel.
       resetSlide(c) {
         resetWreck();
         c.dmg.forEach(b => {
-          b.dmgP = 0;
-          b.cracks = 0;
+          // Front-line structures in the direct slide channel show initial distress; others damage progressively
+          const inCorePath = Math.abs(b.x) < 20 && b.z < 10;
+          b.dmgP = inCorePath ? R(0.28, 0.52) : 0;
+          b.cracks = inCorePath ? 1 : 0;
+          if (inCorePath) {
+            b.tg.set(b.dmgP * 0.28, b.side * b.dmgP * 0.08);
+          }
         });
-        c.rocks.forEach(r => {
-          r.state = 'wait';
-          r.x = r.hx;
-          r.z = r.hz;
-          r.vx = r.vz = 0;
-          r.slow = 0;
-          r.lastHit = null;
-          r.m.rotation.set(0, 0, 0);
-          r.m.position.set(r.x, H(r.x, r.z) + r.s * 0.75, r.z);
+        const total = c.rocks.length;
+        c.rocks.forEach((r, idx) => {
+          r.m.rotation.set(R(0, 3.14), R(0, 3.14), R(0, 3.14));
+          this.respawnRock(r, idx, total, true);
         });
-        c.front = -93;
-        c.prevFront = -93;
-        c.fv = 0;
-        c.st = 0;
-        c.moving = 0;
-        c.slideState = 'calm';
+        c.front = 10;
+        c.prevFront = 10;
+        c.fv = 4.0;
+        c.st = 1.0;
+        c.moving = c.rocks.filter(r => r.active).length;
+        c.slideState = 'running';
         this.updateMud(c, true);
       },
       updateMud(c, force) {
@@ -3411,7 +3032,7 @@ export function createDisasterEngine(canvas, { onStatsUpdate, onEarthquakeUpdate
         c.mud.geometry.attributes.position.needsUpdate = true;
         c.mud.geometry.computeVertexNormals();
       },
-      // Start / Stop from the Landslide control. Starting after the slide has come to rest replays it from the top.
+      // Start / Stop / Reset from the Landslide control.
       control(c, action) {
         if (action === 'start' && c.slideState === 'done') this.resetSlide(c);
         if (action === 'start' && (c.slideState === 'calm' || c.slideState === 'stopped')) c.slideState = 'running';
@@ -3425,52 +3046,169 @@ export function createDisasterEngine(canvas, { onStatsUpdate, onEarthquakeUpdate
       update(dt, t, c) {
         if (c.slideState !== 'running') return;
         c.st += dt;
-        let n = 0, released = 0;
+
+        // Scale dust and debris spray with intensity
+        if (c.dust && c.dust.mat) {
+          c.dust.mat.size = 4.6 + 2.4 * INT;
+          c.dust.mat.opacity = Math.min(0.68, 0.28 + 0.2 * INT);
+        }
+        if (c.spray && c.spray.mat) {
+          c.spray.mat.size = 1.5 + 0.8 * INT;
+        }
+
+        const intScale = 0.6 + 0.5 * INT;
+        let n = 0;
         const zs = [];
-        for (const r of c.rocks) {
-          if (r.state === 'wait') {
-            if (c.st >= r.delay) r.state = 'move';
-            else continue;
-          }
-          released++;
-          zs.push(r.z);
-          if (r.state !== 'move') continue;
-          n++;
-          const gx = (H(r.x + 0.8, r.z) - H(r.x - 0.8, r.z)) / 1.6, gz = (H(r.x, r.z + 0.8) - H(r.x, r.z - 0.8)) / 1.6;
-          r.vx += -gx * 26 * dt * INT;
-          r.vz += (-gz * 26 + 2) * dt * INT;
-          r.vx *= 0.985;
-          r.vz *= 0.985;
-          r.x += r.vx * dt;
-          r.z += r.vz * dt;
-          r.m.rotation.x += (r.vz * dt) / r.s;
-          r.m.rotation.z -= (r.vx * dt) / r.s;
-          for (const b of c.dmg) {
-            if (b.state !== 'ok' || r.lastHit === b) continue;
-            if (Math.abs(r.x - b.x) < b.hw + r.s * 0.7 && Math.abs(r.z - b.z) < b.hd + r.s * 0.7) {
-              // A boulder strike adds damage and knocks a few pieces loose, but never flattens a house on its own.
-              r.lastHit = b;
-              const sp = Math.hypot(r.vx, r.vz) || 1;
-              b.dmgP += r.s * (0.04 + sp * 0.008) * b.fragK;
-              crack(b, 1 + Math.round(r.s * 0.5), r.vx / sp, r.vz / sp);
-              r.vz *= 0.35;
-              r.vx *= 0.5;
+
+        for (let i = 0; i < c.rocks.length; i++) {
+          const r = c.rocks[i];
+          if (r.rest > 0) {
+            r.rest -= dt * (0.75 + 0.35 * INT);
+            if (r.rest <= 0) {
+              this.respawnRock(r, i, c.rocks.length, false);
+            } else {
+              r.y = H(r.x, r.z) + r.s * 0.68;
+              r.m.position.set(r.x, r.y, r.z);
+              continue;
             }
           }
-          r.slow = Math.hypot(r.vx, r.vz) < 0.4 ? r.slow + dt : 0;
-          if (r.z > r.stopZ || r.slow > 2.5) r.state = 'stop';
-          r.m.position.set(r.x, H(r.x, r.z) + r.s * 0.75, r.z);
+
+          r.active = true;
+          r.state = 'move';
+          n++;
+          zs.push(r.z);
+
+          // 1. Calculate downhill acceleration from terrain gradient H(x,z)
+          const eps = 0.8;
+          const gx = (H(r.x + eps, r.z) - H(r.x - eps, r.z)) / (2 * eps);
+          const gz = (H(r.x, r.z + eps) - H(r.x, r.z - eps)) / (2 * eps);
+
+          let ax = -gx * 28 * intScale;
+          let az = -gz * 32 * intScale;
+
+          // Guide trajectory along channel into the northern city edge
+          const toCityX = r.targetX - r.x;
+          const toCityZ = Math.max(4, r.stopZ - r.z);
+          const toCityDist = Math.hypot(toCityX, toCityZ) || 1;
+          const apronBlend = smooth(-28, -4, r.z);
+          ax += (toCityX / toCityDist) * (4.0 + 3.5 * apronBlend) * intScale;
+          az += ((toCityZ / toCityDist) * (5.5 + 6.5 * apronBlend) + 3.5) * intScale;
+
+          if (Math.abs(r.x) > 22) {
+            ax -= Math.sign(r.x) * (Math.abs(r.x) - 22) * 3.8;
+          }
+
+          r.vx += ax * dt;
+          r.vz += az * dt;
+
+          // Frame-rate independent damping (stronger once inside the urban runout zone)
+          const drag = Math.exp(-dt * (r.z > 2 ? 0.9 : 0.32));
+          r.vx *= drag;
+          r.vz *= drag;
+
+          let spd = Math.hypot(r.vx, r.vz);
+          const maxSpd = (14 + 9 * INT) * r.spdK;
+          if (spd > maxSpd) {
+            r.vx = (r.vx / spd) * maxSpd;
+            r.vz = (r.vz / spd) * maxSpd;
+            spd = maxSpd;
+          } else if (r.z < -6 && r.vz < 4.5 * intScale) {
+            r.vz = 4.5 * intScale;
+            spd = Math.hypot(r.vx, r.vz);
+          }
+
+          if (spd > 0.01) {
+            r.dirX = r.vx / spd;
+            r.dirZ = r.vz / spd;
+          }
+
+          // 2. Advance horizontal position
+          r.x += r.vx * dt;
+          r.z += r.vz * dt;
+
+          // 3. Terrain following & heavy-rock bouncing
+          const groundY = H(r.x, r.z) + r.s * 0.68;
+          r.vy -= 28 * dt;
+          r.y += r.vy * dt;
+          r.bounced = false;
+
+          if (r.y <= groundY) {
+            r.y = groundY;
+            if (r.vy < -2.2) {
+              // Bounce with heavy-rock restitution and damping
+              r.vy = Math.min(4.2, -r.vy * R(0.28, 0.38));
+              r.bounced = true;
+            } else {
+              r.vy = 0;
+            }
+            // Rock hop over uneven mountainside terrain
+            r.hopTimer -= dt * (0.75 + 0.3 * INT);
+            if (r.hopTimer <= 0 && r.z < -4 && spd > 5.0) {
+              const slopeMag = Math.hypot(gx, gz);
+              r.vy = Math.min(4.0, (1.3 + slopeMag * 2.0 + spd * 0.11) * R(0.65, 1.15));
+              r.hopTimer = R(0.26, 0.72);
+              r.bounced = true;
+            }
+          } else if (r.y > groundY + 2.2 + r.s * 0.55) {
+            r.y = groundY + 2.2 + r.s * 0.55;
+            if (r.vy > 0) r.vy *= 0.3;
+          }
+
+          // 4. Speed-coupled 3D boulder rotation
+          r.angVx = (r.vz / r.s) * 1.15;
+          r.angVz = -(r.vx / r.s) * 1.15;
+          r.angVy = (spd / r.s) * r.spinBias;
+          r.m.rotation.x += r.angVx * dt;
+          r.m.rotation.y += r.angVy * dt;
+          r.m.rotation.z += r.angVz * dt;
+
+          // 5. Building collision & impact interaction at hillside and city edge
+          for (const b of c.dmg) {
+            if (r.lastHit === b) continue;
+            if (Math.abs(r.x - b.x) < b.hw + r.s * 0.75 && Math.abs(r.z - b.z) < b.hd + r.s * 0.75) {
+              r.lastHit = b;
+              const sp = Math.hypot(r.vx, r.vz) || 1;
+              if (b.state === 'ok') {
+                b.dmgP = (b.dmgP || 0) + r.s * (0.07 + sp * 0.01) * (b.fragK || 1) * (0.7 + 0.3 * INT);
+                crack(b, 2 + Math.round(r.s * 0.5), r.vx / sp, r.vz / sp);
+              }
+              const pushX = r.x >= b.x ? 1 : -1;
+              r.vx = pushX * Math.max(1.8, Math.abs(r.vx) * 0.55) + R(-0.8, 0.8);
+              r.vz *= 0.38;
+              r.vy = Math.max(r.vy, R(1.2, 2.5));
+              r.bounced = true;
+            }
+          }
+
+          r.m.position.set(r.x, r.y, r.z);
+
+          // 6. Recycle boulder when it reaches its lower city-edge runout boundary or settles
+          r.slow = spd < 1.2 ? r.slow + dt : 0;
+          if (r.z > r.stopZ || (r.z > -4 && r.slow > 1.0) || r.slow > 2.2) {
+            r.active = false;
+            r.state = 'rest';
+            r.vx = 0;
+            r.vy = 0;
+            r.vz = 0;
+            r.angVx = 0;
+            r.angVy = 0;
+            r.angVz = 0;
+            r.y = H(r.x, r.z) + r.s * 0.68;
+            r.m.position.set(r.x, r.y, r.z);
+            r.rest = R(0.35, 1.65);
+          }
         }
+
         c.moving = n;
-        // The slide front is where most of the released material has got to.
         if (zs.length) {
           zs.sort((a, b) => a - b);
-          c.front = Math.max(c.front, zs[Math.floor(zs.length * 0.85)]);
+          c.front = Math.max(c.front, Math.min(20, zs[Math.floor(zs.length * 0.85)]));
         }
         c.fv += ((c.front - c.prevFront) / Math.max(dt, 1e-3) - c.fv) * Math.min(1, dt * 3);
         c.prevFront = c.front;
-        const active = c.fv > 0.25 || n > 6;
+        const active = n > 4;
         this.updateMud(c, false);
+
         for (const b of c.dmg) {
           if (b.state !== 'ok') continue;
           if (Math.abs(b.x) > c.halfW(b.z) + b.hw) {
@@ -3479,13 +3217,11 @@ export function createDisasterEngine(canvas, { onStatsUpdate, onEarthquakeUpdate
           }
           const ahead = b.z - b.hd - c.front;
           if (ahead > 0) {
-            // The ground starts to shake as the slide approaches.
             const k = active && ahead < 14 ? (1 - ahead / 14) * 0.03 : 0;
             b.sway.set(Math.sin(t * 13 + b.x) * k, Math.sin(t * 11.3 + b.z) * k * 1.2);
             continue;
           }
-          // Mud and rocks pressing on the house: shaking, then tilting downhill, cracking, and finally collapse.
-          if (active) b.dmgP += dt * (b.town ? 0.07 : 0.12) * INT * b.fragK;
+          if (active) b.dmgP += dt * (b.town ? 0.035 : 0.065) * INT * b.fragK;
           const k = active ? 0.035 : 0;
           b.sway.set(Math.sin(t * 15 + b.x) * k, Math.sin(t * 12.7 + b.z) * k);
           const d = Math.min(1, b.dmgP);
@@ -3496,9 +3232,8 @@ export function createDisasterEngine(canvas, { onStatsUpdate, onEarthquakeUpdate
             b.crush = Math.max(0.6, b.crush - 0.07);
             crack(b, 3, 0, 1);
           }
-          if (b.dmgP >= 1) collapse(b, b.side * 0.2, 1);
+          if (b.dmgP >= 1.1) collapse(b, b.side * 0.2, 1);
         }
-        if (released === c.rocks.length && n === 0) c.slideState = 'done';
       },
       status(c) {
         if (c.slideState === 'calm') return 'Slope calm: press Start Landslide';
@@ -4109,14 +3844,10 @@ export function createDisasterEngine(canvas, { onStatsUpdate, onEarthquakeUpdate
     const cityRad = m._townHalf || m.townR || 54;
     if (m.id === 'wildfire') {
       hazardZones3D.fireZones.push({ kind: 'fire', label: 'WILDFIRE FRONT', x: -20, z: 0, r: 34 * rScale });
-    } else if (m.id === 'volcano') {
-      hazardZones3D.fireZones.push({ kind: 'fire', label: 'VOLCANIC VENT', x: -50, z: -50, r: 30 * rScale });
     } else if (m.id === 'flood') {
       hazardZones3D.floodZones.push({ kind: 'flood', label: 'FLOOD BASIN', x: m.town[0], z: m.town[1], r: cityRad * 0.85 * rScale });
     } else if (m.id === 'tsunami') {
       hazardZones3D.floodZones.push({ kind: 'tsunami', label: 'TSUNAMI SURGE', x: 10, z: 0, r: 42 * rScale });
-    } else if (m.id === 'tornado') {
-      hazardZones3D.debrisZones.push({ kind: 'tornado', label: 'TORNADO VORTEX', x: m.town[0], z: m.town[1], r: cityRad * 0.75 * rScale });
     } else if (m.id === 'earthquake') {
       hazardZones3D.debrisZones.push({ kind: 'debris', label: 'SEISMIC RUBBLE', x: m.town[0], z: m.town[1], r: cityRad * 0.85 * rScale });
     } else if (m.id === 'landslide') {
@@ -4558,8 +4289,9 @@ export function createDisasterEngine(canvas, { onStatsUpdate, onEarthquakeUpdate
     curMode = m;
     ctx = {};
     modeT = 0;
-    seed = 1234 + i * 977;
-    seed2 = 4321 + i * 131;
+    const si = m.seedIndex ?? i;
+    seed = 1234 + si * 977;
+    seed2 = 4321 + si * 131;
     H = makeH(m);
     scene.background.set(m.sky);
     scene.fog.color.set(m.fog ?? m.sky);
@@ -4779,16 +4511,35 @@ export function createDisasterEngine(canvas, { onStatsUpdate, onEarthquakeUpdate
   };
   sharedSim.register3DController(ctrl3D);
 
-  setMode(0);
+  setMode(clamp(initialMode || 0, 0, MODES.length - 1));
   rafId = requestAnimationFrame(frame);
 
-  return {
+  const api = {
     getInitialAutoRotate: () => orbit.auto,
     setMode,
     triggerEarthquake,
     setEarthquakeMagnitude,
     getEarthquakeState,
     resetEarthquakeBuildings,
+    getTsunamiState() {
+      if (!curMode || curMode.id !== 'tsunami') return null;
+      return {
+        phase: ctx.phase,
+        modeT,
+        wx: ctx.wx,
+        floodLvl: ctx.floodLvl,
+        currentWaterLevel: ctx.currentWaterLevel,
+        persistentFloodLevel: ctx.persistentFloodLevel,
+        targetFloodDepth: ctx.targetFloodDepth,
+        floodEdge: ctx.floodEdge,
+        persistentWaterVisible: Boolean(ctx.persistentFloodWater?.visible),
+        cityBounds: ctx.cityBounds,
+        standingBuildings: buildings.filter(b => b.rig && b.state === 'ok').length,
+        collapsedBuildings: ctx.down || 0,
+        activeDebris: ctx.floatingDebris ? ctx.floatingDebris.filter(d => d.m.visible).length : 0,
+        activeRescueBoats: ctx.rescueBoats ? ctx.rescueBoats.filter(b => b.g.visible).length : 0,
+      };
+    },
     resetSimulation() {
       for (const pm of poiMeshes.values()) {
         swarmGroup.remove(pm.g);
@@ -4926,4 +4677,6 @@ export function createDisasterEngine(canvas, { onStatsUpdate, onEarthquakeUpdate
       renderer.dispose();
     }
   };
+  window.__disasterEngine = api;
+  return api;
 }

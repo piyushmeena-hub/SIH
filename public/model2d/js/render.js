@@ -118,6 +118,7 @@ function drawTerrain(ctx, cv, view, s) {
     const p = worldToScreen(view, cv, b.x - b.w / 2, b.y - b.d / 2);
     const wpx = b.w * view.pxPerM, dpx = b.d * view.pxPerM;
     if (wpx < 1.2) continue;
+    if (p.x + wpx < 0 || p.x > cv.width || p.y + dpx < 0 || p.y > cv.height) continue;
     const tall = b.heightM > s.altitudeM;
     ctx.fillStyle = tall ? 'rgba(122,74,66,0.55)' : 'rgba(138,136,122,0.28)';
     ctx.fillRect(p.x, p.y, wpx, dpx);
@@ -225,6 +226,28 @@ function drawRangeRing(ctx, cv, view, node, rangeM) {
   ctx.stroke(); ctx.setLineDash([]);
 }
 
+// The rest of the live mesh: every drone's real next hop toward C2 that the
+// labelled chain doesn't already cover, drawn thin and unlabelled (#8).
+function drawMeshLinks(ctx, cv, view, links, hops) {
+  if (!links || !links.length) return;
+  const U = window.uiScale || 1;
+  const labelled = new Set(hops.map(h => h.a.id + '>' + h.b.id));
+  ctx.save();
+  ctx.globalAlpha = 0.6;
+  ctx.lineWidth = 1 * U;
+  for (const l of links) {
+    if (labelled.has(l.a.id + '>' + l.b.id) || labelled.has(l.b.id + '>' + l.a.id)) continue;
+    const a = worldToScreen(view, cv, l.a.x, l.a.y);
+    const b = worldToScreen(view, cv, l.b.x, l.b.y);
+    ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y);
+    ctx.strokeStyle = l.state === 'ok' ? COLORS.linkOk : l.state === 'degraded' ? COLORS.linkDegraded : COLORS.linkLost;
+    ctx.setLineDash(l.state === 'ok' ? [] : [4 * U, 4 * U]);
+    ctx.stroke();
+  }
+  ctx.setLineDash([]);
+  ctx.restore();
+}
+
 function drawLinks(ctx, cv, view, hops, timeSec, connected) {
   const U = window.uiScale || 1;
   for (const hop of hops) {
@@ -279,48 +302,6 @@ function drawBase(ctx, cv, view, base) {
   ctx.fillText('C2 ground station', c.x, c.y + 26 * U);
 }
 
-function drawPois(ctx, cv, view, pois) {
-  const U = window.uiScale || 1;
-  if (!pois) return;
-  for (const poi of pois) {
-    if (typeof PoiStore !== "undefined" && PoiStore.recordMapRender) {
-      PoiStore.recordMapRender(poi.id, poi.state, poi.assignedUavId, Math.floor(poi.progress));
-    }
-    const c = worldToScreen(view, cv, poi.x, poi.y);
-    let color = COLORS.target;
-    if (poi.state === 'SURVEYED' || poi.state === 'ACKNOWLEDGED') color = '#55aa55';
-    else if (poi.state === 'SURVEYING' || poi.state === 'DATA_CREATED') color = '#ffaa00';
-    else if (poi.priority === 'CRITICAL') color = '#ff3333';
-    else if (poi.priority === 'HIGH') color = '#ff7700';
-
-    ctx.beginPath();
-    ctx.arc(c.x, c.y, 10 * U, 0, 2 * Math.PI);
-    if (poi.state === 'UNASSIGNED') ctx.setLineDash([4*U, 4*U]);
-    ctx.strokeStyle = color; ctx.lineWidth = 2 * U;
-    ctx.stroke();
-    ctx.setLineDash([]);
-    
-    // Progress arc
-    if (poi.progress > 0 && poi.progress < 100) {
-        ctx.beginPath();
-        ctx.arc(c.x, c.y, 12 * U, -Math.PI/2, -Math.PI/2 + (poi.progress/100)*2*Math.PI);
-        ctx.strokeStyle = '#fff'; ctx.lineWidth = 2*U;
-        ctx.stroke();
-    }
-
-    ctx.fillStyle = color;
-    ctx.font = (12 * U) + 'px "IBM Plex Mono", monospace';
-    ctx.textAlign = 'center';
-    ctx.fillText(poi.id + ' (' + poi.state + ')', c.x, c.y + 24 * U);
-    if (poi.assignedUavId) {
-       ctx.fillText('UAV: ' + poi.assignedUavId, c.x, c.y + 36 * U);
-       
-       // Draw route line
-       const uavC = worldToScreen(view, cv, poi.x, poi.y); // actually we need drone pos, but it's hard without knowing drone state here. Skip route line drawing for now to keep rendering simple.
-    }
-  }
-}
-
 function drawTarget(ctx, cv, view, target) {
   const U = window.uiScale || 1;
   const c = worldToScreen(view, cv, target.x, target.y);
@@ -335,37 +316,7 @@ function drawTarget(ctx, cv, view, target) {
   ctx.fillText('mission target', c.x, c.y + 32 * U);
 }
 
-function drawReturnRoutes(ctx, cv, view, s) {
-  const U = window.uiScale || 1;
-  const baseScreen = worldToScreen(view, cv, s.base.x, s.base.y);
-  for (const d of s.drones) {
-    if (d.mode === 'returning' || d.mode === 'landing') {
-      const droneScreen = worldToScreen(view, cv, d.x, d.y);
-      ctx.beginPath();
-      ctx.moveTo(droneScreen.x, droneScreen.y);
-      ctx.lineTo(baseScreen.x, baseScreen.y);
-      ctx.strokeStyle = '#38bdf8';
-      ctx.lineWidth = 2 * U;
-      ctx.setLineDash([6 * U, 4 * U]);
-      ctx.stroke();
-      ctx.setLineDash([]);
-
-      const mx = (droneScreen.x + baseScreen.x) / 2;
-      const my = (droneScreen.y + baseScreen.y) / 2;
-      ctx.font = (9 * U) + 'px "IBM Plex Mono", monospace';
-      ctx.fillStyle = '#38bdf8';
-      ctx.textAlign = 'center';
-      ctx.fillText('RTB ➔ GCS', mx, my - 6 * U);
-    }
-  }
-}
-
 function droneColor(d) {
-  if (d.mode === 'returning' || d.mode === 'landing') return '#38bdf8';
-  if (d.mode === 'landed') {
-    if (d.role === 'RECHARGING') return '#fbbf24';
-    return '#4ade80';
-  }
   const r = effRole(d);
   return COLORS[r] || COLORS.dead;
 }
@@ -417,13 +368,6 @@ function drawDrone(ctx, cv, view, d, selected) {
   ctx.font = (10 * U) + 'px "Segoe UI", sans-serif'; ctx.textAlign = 'center';
   ctx.fillStyle = COLORS.textDim;
   ctx.fillText(d.id, c.x, c.y + 24 * U);
-
-  const rText = effRole(d);
-  if (rText === 'RETURNING_TO_BASE' || rText === 'LANDING' || rText === 'LANDED' || rText === 'RECHARGING' || rText === 'AVAILABLE') {
-    ctx.font = (9 * U) + 'px "IBM Plex Mono", monospace';
-    ctx.fillStyle = (rText === 'RETURNING_TO_BASE' || rText === 'LANDING') ? '#38bdf8' : (rText === 'RECHARGING' ? '#fbbf24' : '#4ade80');
-    ctx.fillText(rText, c.x, c.y + 36 * U);
-  }
 }
 
 // C2's memory of where each lost drone was last heard — ghost markers the
@@ -514,13 +458,13 @@ function render(ctx, cv, view, s, status, selected, usable) {
     if (node.kind !== 'mission') drawRangeRing(ctx, cv, view, node, usable);
   }
 
+  drawMeshLinks(ctx, cv, view, status.links, status.hops);
   drawLinks(ctx, cv, view, status.hops, s.time, status.fleetConnected); // the drawn chain is the physical fleet link
   drawPackets(ctx, cv, view, s);
   drawLostMarkers(ctx, cv, view, s);
   drawTakMarkers(ctx, cv, view, s);
   drawBase(ctx, cv, view, s.base);
-  if (s.pois && s.pois.length) drawPois(ctx, cv, view, s.pois); else drawTarget(ctx, cv, view, s.target);
-  drawReturnRoutes(ctx, cv, view, s);
+  drawTarget(ctx, cv, view, s.target);
   for (const d of s.drones) drawDrone(ctx, cv, view, d, d === selected);
   drawWind(ctx, cv, s);
   drawScaleBar(ctx, cv, view);

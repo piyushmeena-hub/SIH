@@ -12,23 +12,6 @@
 
 const SCENARIO_PACK = [
   {
-    id: 'mission-complete-rtb',
-    title: 'Mission Completion and Return-to-Base',
-    blurb: 'Autonomous disaster response demonstration: UAVs fly out to five PoIs, conduct surveys, upload data packets via relay, receive GCS acknowledgement, return to base, enter landing zone, touch down, and recharge. Once all UAVs land, mission status switches to COMPLETE.',
-    scenario: {
-      version: 1,
-      name: 'Mission Completion and Return-to-Base',
-      radio: 'sik-v3', env: 'open', airframe: 'q450',
-      count: 10, altitudeM: 50, spacingPct: 85,
-      terrain: 'flat', seed: 42,
-      base: { x: 0, y: 0 },
-      windSpd: 0, windDir: 0,
-      corridor: true, broadcast: true, coverage: false,
-      gpsZones: [], jammers: [],
-    },
-  },
-
-  {
     id: 'ddil-denied',
     title: 'D — GPS-denied crossing',
     blurb: 'Long-range radios bridge the valley fine — but a GNSS dead zone sits astride the route. Watch the drones fly on dead reckoning, miss their slots by the size of their nav error, report poisoned positions, and C2 plan around the uncertainty.',

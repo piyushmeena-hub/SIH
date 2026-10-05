@@ -62,6 +62,10 @@ function makeNet(seed) {
     nodeTxUntil: {},
     nodeDutyUntil: {},
     vidFrameSeq: 0,
+    // flood bookkeeping (#14): each node's queued-but-unsent re-send (for
+    // duplicate suppression), and copies actually aired per C2 order round
+    bcastPendingBy: new Map(),
+    floodSeq: null, floodCount: 0, floodCopiesEma: null,
   };
 }
 
@@ -146,6 +150,18 @@ function pendAir(s, chan, secs) {
 // queue against pathological fan-out.
 const BCAST_QUEUE_MAX = 64;
 
+// Counter-based broadcast-storm suppression (#14): a node still waiting to
+// re-send a table cancels once it has heard this many OTHER copies of it —
+// its neighbourhood is covered already. Every node re-sending once put N+1
+// copies per round on the air (44 s of air per 1 s round at 120 drones on
+// SiK); in a dense swarm this keeps a handful, while a sparse relay line —
+// where each node hears only one or two copies — still forwards hop by hop.
+const BCAST_SUPPRESS_DUPS = 3;
+
+function forgetPendingBcast(s, b) {
+  if (s.net.bcastPendingBy.get(b.srcId) === b) s.net.bcastPendingBy.delete(b.srcId);
+}
+
 function scheduleBcast(s, srcId, payload, bytes, rad) {
   // Supersession: drop queued (uncommitted) older tables — theirs is dead air.
   const list = s.net.bcasts;
@@ -154,8 +170,19 @@ function scheduleBcast(s, srcId, payload, bytes, rad) {
     if (!q.committed && !q._gone && q.payload.seq < payload.seq) {
       pendAir(s, q.chan, -q.airtime);
       capLog(s, { ev: 'drop', reason: 'bcast-superseded', from: q.srcId, seqNo: q.payload.seq });
+      forgetPendingBcast(s, q);
       list.splice(i, 1);
     }
+  }
+  // A new C2 round closes the last one: fold its aired copies into the
+  // estimate that paces C2's order rounds (cmdIntervalSec).
+  if (srcId === 'C2' && payload.seq !== s.net.floodSeq) {
+    if (s.net.floodSeq != null) {
+      const e = s.net.floodCopiesEma;
+      s.net.floodCopiesEma = e == null ? s.net.floodCount : e + 0.3 * (s.net.floodCount - e);
+    }
+    s.net.floodSeq = payload.seq;
+    s.net.floodCount = 0;
   }
   if (list.length >= BCAST_QUEUE_MAX) {
     capLog(s, { ev: 'drop', reason: 'bcast-backlog', from: srcId, seqNo: payload.seq });
@@ -165,7 +192,9 @@ function scheduleBcast(s, srcId, payload, bytes, rad) {
   const airRate = (rad && rad.airRateKbps) || 64;
   const airtime = (bytes * 8) / (airRate * 1000);
   pendAir(s, chan, airtime);
-  list.push({ srcId, payload, bytes, radio: rad, chan, airtime, tQueued: s.time, committed: false, tFire: null });
+  const entry = { srcId, payload, bytes, radio: rad, chan, airtime, tQueued: s.time, committed: false, tFire: null, dupHeard: 0 };
+  list.push(entry);
+  if (srcId !== 'C2') s.net.bcastPendingBy.set(srcId, entry);
 }
 
 function sendBroadcast(s, srcId, payload, bytes, radioOverride) {
@@ -204,10 +233,12 @@ function eligibleStartPkt(s, p) {
 
 function commitBcast(s, b, eStart) {
   pendAir(s, b.chan, -b.airtime);
+  forgetPendingBcast(s, b);
   if (b.srcId !== 'C2') {
     const d = nodePos(s, b.srcId);
     if (!d || !alive(d)) { b._gone = true; return; } // dead transmitter (B17) — never went on air
   }
+  if (b.payload.seq === s.net.floodSeq) s.net.floodCount++;
   // Advance the clocks by the ACTUAL airtime, bill it once (finding #16),
   // record real emission for DF sensing.
   s.net.chanBusyUntil[b.chan] = eStart + b.airtime;
@@ -402,12 +433,25 @@ function stepBcasts(s) {
       if (id === b.srcId || id === 'C2') continue;
       const d = nodePos(s, id);
       if (!d || !alive(d)) continue;
-      if (d.bcastSeen >= b.payload.seq) continue;
+      const seen = d.bcastSeen >= b.payload.seq;
+      const mine = seen ? s.net.bcastPendingBy.get(id) : null;
+      // Already have it: only a copy heard while still waiting to re-send the
+      // same table matters — it counts toward suppression.
+      if (seen && !(mine && !mine.committed && !mine._gone && mine.payload.seq === b.payload.seq)) continue;
       const rxRad = (d && d.radio) || s.radio;
       if (typeof bandCompatible === 'function' && !bandCompatible(rad, rxRad)) continue;
       const m = liveMarginDb(s, b.srcId, id);
-      if (m <= 0) continue;
+      if (!(m > 0)) continue; // NaN-safe: `m <= 0` let NaN margins deliver at any range (soak R1)
       if (s.net.rng() >= pktSuccessProb(m)) continue; // one roll, no retry
+      if (seen) {
+        if (++mine.dupHeard >= BCAST_SUPPRESS_DUPS) {
+          mine._gone = true; // never airs; skipped by the commit phase and dropped from the queue
+          pendAir(s, mine.chan, -mine.airtime);
+          forgetPendingBcast(s, mine);
+          capLog(s, { ev: 'drop', reason: 'bcast-suppressed', from: id, seqNo: mine.payload.seq });
+        }
+        continue;
+      }
       d.bcastSeen = b.payload.seq;
       d.inbox.push({ kind: 'bcast', src: 'C2', payload: b.payload });
       s.net.delivered++;
@@ -529,13 +573,47 @@ function routePath(s, from, to) {
 // cadence so routes still track the moving swarm.
 const C2_TREE_TTL_SEC = 0.5;
 
+// Route damping. ETX rides the shadow-fading process and the orbit geometry,
+// so near-equal alternatives cross constantly; undamped, on-station drones
+// flipped parents 252 times in 3 min at UI defaults (127 of them straight
+// back within 3 s). Two standard mesh-routing damps:
+//   hysteresis — a node keeps its parent unless another path is cheaper by
+//     more than ROUTE_HYST_ETX (kept under one hop's worth, so a drone can
+//     still shed a needless relay hop);
+//   hold-down  — a parent adopted less than ROUTE_HOLD_SEC ago is only
+//     abandoned for a path ROUTE_HOLD_PEN_ETX better, i.e. when its link has
+//     collapsed. A dead or unusable parent never holds anything.
+// Neither damp may leak into a node's CHILDREN: a penalty folded into the
+// path cost made a whole subtree see its parent as falsely expensive for one
+// rebuild after the parent switched, so healthy children jumped away from a
+// 25 dB link and straight back. Hysteresis only biases each node's own
+// choice (exact, since it stays under the 1-ETX minimum link cost); the
+// hold-down is a separate pass over the finished tree.
+const ROUTE_HYST_ETX = 0.5;
+const ROUTE_HOLD_SEC = 5;
+const ROUTE_HOLD_PEN_ETX = 5;
+
+// Is `node` in the subtree hanging below `root` (following parent links)?
+function hangsBelow(prev, node, root, limit) {
+  for (let x = node, n = 0; x !== undefined && x !== 'C2' && n <= limit; x = prev.get(x), n++) {
+    if (x === root) return true;
+  }
+  return false;
+}
+
 function c2Tree(s) {
   if (s._c2Tree && s.time - s._c2Tree.at < C2_TREE_TTL_SEC) return s._c2Tree;
+  const last = s._c2Tree;
   const ids = nodeIds(s);
+  // Dijkstra keyed on `rank` = TRUE ETX to the parent + this node's own
+  // switch penalty; `dist` is the true ETX along the chosen tree, and it —
+  // not rank — is what children build on.
+  const rank = new Map();
   const dist = new Map();
-  for (let i = 0; i < ids.length; i++) dist.set(ids[i], Infinity);
+  for (let i = 0; i < ids.length; i++) { rank.set(ids[i], Infinity); dist.set(ids[i], Infinity); }
   const prev = new Map();
   const done = new Set();
+  rank.set('C2', 0);
   dist.set('C2', 0);
   const maxRadio = (s.relayRadio && s.relayRadio.rangeLosM > s.radio.rangeLosM) ? s.relayRadio : s.radio;
   const maxSpan = usableRangeM(maxRadio, s.envFactor) * 2.5;
@@ -544,13 +622,14 @@ function c2Tree(s) {
     for (let i = 0; i < ids.length; i++) {
       const id = ids[i];
       if (!done.has(id)) {
-        const d = dist.get(id);
-        if (d < best) { best = d; cur = id; }
+        const r = rank.get(id);
+        if (r < best) { best = r; cur = id; }
       }
     }
     if (cur === null || best === Infinity) break; // nothing reachable remains
     done.add(cur);
     const curPos = nodePos(s, cur);
+    const curDist = dist.get(cur);
     for (let i = 0; i < ids.length; i++) {
       const nxt = ids[i];
       if (done.has(nxt)) continue;
@@ -560,10 +639,46 @@ function c2Tree(s) {
       }
       const c = linkCost(s, cur, nxt);
       if (c === Infinity) continue;
-      if (best + c < dist.get(nxt)) { dist.set(nxt, best + c); prev.set(nxt, cur); }
+      const incumbent = last ? last.prev.get(nxt) : undefined;
+      const pen = incumbent !== undefined && incumbent !== cur && linkUsable(s, incumbent, nxt) ? ROUTE_HYST_ETX : 0;
+      if (curDist + c + pen < rank.get(nxt)) {
+        rank.set(nxt, curDist + c + pen);
+        dist.set(nxt, curDist + c);
+        prev.set(nxt, cur);
+      }
     }
   }
-  s._c2Tree = { at: s.time, prev, dist };
+  // Hold-down: a parent adopted under ROUTE_HOLD_SEC ago is kept while its
+  // link still works, it is still reachable, the new path doesn't save
+  // ROUTE_HOLD_PEN_ETX, and keeping it can't close a loop. Then the true
+  // costs are re-walked from C2 over the final tree.
+  if (last) {
+    let reverted = false;
+    for (const [id, p] of prev) {
+      const inc = last.prev.get(id);
+      if (inc === undefined || inc === p || !(s.time - last.since.get(id) < ROUTE_HOLD_SEC)) continue;
+      if (!(dist.get(inc) < Infinity) || !linkUsable(s, inc, id)) continue;
+      if (dist.get(inc) + linkCost(s, inc, id) - dist.get(id) >= ROUTE_HOLD_PEN_ETX) continue;
+      if (hangsBelow(prev, inc, id, ids.length)) continue;
+      prev.set(id, inc);
+      reverted = true;
+    }
+    if (reverted) {
+      const kids = new Map();
+      for (const [id, p] of prev) { if (!kids.has(p)) kids.set(p, []); kids.get(p).push(id); }
+      const queue = ['C2'];
+      while (queue.length) {
+        const u = queue.shift();
+        for (const v of kids.get(u) || []) { dist.set(v, dist.get(u) + linkCost(s, u, v)); queue.push(v); }
+      }
+    }
+  }
+  // When each node adopted its current parent (drives the hold-down).
+  const since = new Map();
+  for (const [id, p] of prev) {
+    since.set(id, last && last.prev.get(id) === p ? last.since.get(id) : s.time);
+  }
+  s._c2Tree = { at: s.time, prev, dist, since };
   return s._c2Tree;
 }
 
@@ -805,9 +920,51 @@ function stepNet(s, dt) {
 //     deliver {pid, kind, src, dst}
 //     drop    {pid?, kind, reason, from?, to?, marginDb?}  reason: no-route|link-fail
 //     bcast   {seqNo, from, to, marginDb}
+function recordUserAction(s, action) {
+  if (!s || !s.captureOn) return;
+  if (!s.userActions) s.userActions = [];
+  s.userActions.push({ t: s.time, ...action });
+}
+
 function exportCaptureJSONL(s) {
-  const header = { seq: -1, t: 0, ev: 'meta', radio: s.radio.id, broadcast: !!s.broadcastC2, events: s.net.cap.length };
-  return [header, ...s.net.cap].map(e => JSON.stringify(e)).join('\n');
+  const baseSettings = s.initialSettings || {
+    radio: s.radio ? s.radio.id : undefined,
+    airframe: s.airframe ? s.airframe.id : undefined,
+    count: s.drones ? s.drones.length : undefined,
+    altitudeM: s.altitudeM,
+    deployFrac: s.deployFrac,
+    corridorRouting: !!s.corridorRouting,
+    broadcastC2: !!s.broadcastC2,
+    spectrumAgility: !!s.spectrumAgility,
+    lpiMode: !!s.lpiMode,
+    videoOn: !!s.videoOn,
+    videoKbps: s.videoKbps,
+    adversaryMode: !!s.adversaryMode,
+    base: s.base ? { x: s.base.x, y: s.base.y } : { x: 0, y: 0 },
+    target: s.target ? { x: s.target.x, y: s.target.y } : { x: 0, y: 0 },
+    wind: s.wind ? { x: s.wind.x, y: s.wind.y } : { x: 0, y: 0 },
+    envFactor: s.envFactor,
+    terrain: s.terrain ? (s.terrain.name || s.terrain.type || 'flat') : 'flat',
+  };
+  const header = {
+    seq: -1,
+    t: 0,
+    ev: 'meta',
+    version: 2,
+    seed: s.seed,
+    radio: s.radio ? s.radio.id : undefined,
+    broadcast: !!s.broadcastC2,
+    settings: { ...baseSettings },
+    userActions: s.userActions ? [...s.userActions] : [],
+    events: (s.net && s.net.cap) ? s.net.cap.length : 0,
+  };
+  const caps = (s.net && s.net.cap) ? s.net.cap : [];
+  return [header, ...caps].map(e => JSON.stringify(e)).join('\n');
+}
+
+if (typeof window !== 'undefined') {
+  window.recordUserAction = recordUserAction;
+  window.exportCaptureJSONL = exportCaptureJSONL;
 }
 
 // Hop attempt: the link must still exist when the packet actually crosses it,
@@ -832,5 +989,6 @@ if (typeof module !== 'undefined' && module.exports) {
     linkUsable, linkCost, routePath, c2Tree, pathToC2,
     sendPacket, deliverPacket, stepNet, exportCaptureJSONL,
     hopDelivered, HOP_RETRIES, interruptEndpointAttempts,
+    recordUserAction,
   };
 }

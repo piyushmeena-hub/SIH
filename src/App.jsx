@@ -40,10 +40,14 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(true);
   const [webglError, setWebglError] = useState(null);
   const [modeIndex, setModeIndex] = useState(0);
+  const modeIndexRef = useRef(modeIndex);
+  modeIndexRef.current = modeIndex;
   const [viewMode, setViewMode] = useState('3d');
   const viewModeRef = useRef(viewMode);
   viewModeRef.current = viewMode;
   const [intensity, setIntensity] = useState(1);
+  const intensityRef = useRef(intensity);
+  intensityRef.current = intensity;
   const [autoRotate, setAutoRotate] = useState(() => !window.matchMedia('(prefers-reduced-motion: reduce)').matches);
   const [paused, setPaused] = useState(false);
   const [timeScale, setTimeScale] = useState(5);
@@ -434,10 +438,15 @@ export default function App() {
 
     let engine = null;
     try {
+      const safeMode = Math.max(0, Math.min(MODES_META.length - 1, modeIndexRef.current || 0));
       engine = createDisasterEngine(canvas, {
         onStatsUpdate: handleStatsUpdate,
         onEarthquakeUpdate: handleEarthquakeUpdate,
+        initialMode: safeMode,
       });
+      if (intensityRef.current !== 1) {
+        engine.setIntensity(intensityRef.current);
+      }
       engineRef.current = engine;
       engine.setViewMode(viewModeRef.current);
       setIsLoading(false);
@@ -1745,7 +1754,7 @@ export default function App() {
       </nav>
 
       <p className="hint" hidden={!is3D}>
-        Drag to look/orbit · WASD / Arrows to fly 3D · Space / Shift for altitude · Scroll / +/- to zoom · Click Drone/PoI · Press 1–7 for disasters · Press [~] for Diagnostics
+        Drag to look/orbit · WASD / Arrows to fly 3D · Space / Shift for altitude · Scroll / +/- to zoom · Click Drone/PoI · Press 1–5 for disasters · Press [~] for Diagnostics
       </p>
 
       {/* SECTION I: Debug Overlay Modal & Automated Check Suite */}

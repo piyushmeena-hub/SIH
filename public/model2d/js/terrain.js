@@ -299,6 +299,8 @@ function indexBuildings(t) {
   return t;
 }
 
+const TERRAIN_MIN_FEATURE_SPAN_M = 200;
+
 function makeTerrain(name, opts) {
   opts = opts || {};
   const distM = opts.distM != null ? opts.distM : 1000;
@@ -310,15 +312,28 @@ function makeTerrain(name, opts) {
   const tY = (opts.target && opts.target.y != null) ? opts.target.y : (opts.targetY != null ? opts.targetY : 0);
   const rng = mulberry32(seed ^ 0x5eed);
   const along = f => ({ x: baseX + (tX - baseX) * f, y: baseY + (tY - baseY) * f });
+  // Every generated map carries its generator name and the RESOLVED inputs,
+  // so a capture header can rebuild exactly this map (a replay that
+  // guessed 'flat' diverged within seconds — soak finding R16).
+  const gen = {
+    distM, altM, baseX, baseY, targetX: tX, targetY: tY, seed,
+    density: opts.density, heightScale: opts.heightScale,
+  };
+  const tag = (kind, t) => Object.assign(t, { name: kind, gen });
+  // Hill wavelength scales with the mission span — floored, because an
+  // objective ON the base made it 0 and fbm(x / 0) NaN-poisoned every
+  // altitude, LOS test and link margin (soak finding R1); a few metres made
+  // a bed of 170 m spikes. Every shipped scenario is far beyond the floor.
+  const featureSpanM = Math.max(distM, TERRAIN_MIN_FEATURE_SPAN_M);
 
   if (name === 'rolling') {
     const groundAmpM = 2.6 * 50 + 40;     // fixed reference baseline so altitude sweeps do not alter topography (B26)
-    return {
+    return tag('rolling', {
       seed, buildings: [],
       groundAmpM,
       _maxRoofAlt: groundAmpM,
-      groundScaleM: distM * 0.35,      // feature wavelength ~ a few hops
-    };
+      groundScaleM: featureSpanM * 0.35,      // feature wavelength ~ a few hops
+    });
   }
   const keepOut = [
     { x: baseX, y: baseY, rM: 130 },      // GCS staging clearing
@@ -327,20 +342,20 @@ function makeTerrain(name, opts) {
   const cityOpts = { density: opts.density, heightScale: opts.heightScale };
   if (name === 'urban') {
     const c = along(0.5);
-    return indexBuildings({
+    return tag('urban', indexBuildings({
       seed, groundAmpM: 0, groundScaleM: 1,
       buildings: makeCity(c.x, c.y, distM * 3.5, rng, keepOut, cityOpts),
-    });
+    }));
   }
   if (name === 'mixed') {
     const c = along(0.55);
-    return indexBuildings({
-      seed, groundAmpM: 2.0 * 50 + 30, groundScaleM: distM * 0.45,
+    return tag('mixed', indexBuildings({
+      seed, groundAmpM: 2.0 * 50 + 30, groundScaleM: featureSpanM * 0.45,
       buildings: makeCity(c.x, c.y, distM * 2.2, rng, keepOut, cityOpts),
-    });
+    }));
   }
   // 'flat' and anything unknown
-  return { seed, buildings: [], groundAmpM: 0, groundScaleM: 1 };
+  return tag('flat', { seed, buildings: [], groundAmpM: 0, groundScaleM: 1 });
 }
 
 // UMD-lite export so terrain is unit-testable under Node.

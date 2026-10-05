@@ -33,10 +33,12 @@
   const bcastChk = el('bcastChk');
   const captureChk = el('captureChk'), captureOut = el('captureOut'), exportBtn = el('exportBtn');
   const wsUrl = el('wsUrl'), extConnectBtn = el('extConnectBtn'), extStatus = el('extStatus');
+  const extDiagnostics = el('extDiagnostics'), extDiagBody = el('extDiagBody'), droneDecisionCard = el('droneDecisionCard');
   const viewBtn = el('viewBtn');
   const speedBtns = Array.from(document.querySelectorAll('[data-speed]'));
   const statusPill = el('statusPill'), specCard = el('specCard');
   const hopsBody = el('hopsBody'), fleetBody = el('fleetBody'), eventLog = el('eventLog');
+  const fleetRowMap = new Map();
   const chanLine = el('chanLine');
   const killBtn = el('killBtn'), resetBtn = el('resetBtn');
   const kpiRelays = el('kpiRelays'), kpiMission = el('kpiMission'), kpiThroughput = el('kpiThroughput'), kpiClock = el('kpiClock');
@@ -275,6 +277,8 @@
       relayRadio: RADIOS.find(r => r.id === relayRadioSel.value) || null,
     });
     selected = null; selectedJammer = null; selectedZone = null;
+    fleetRowMap.clear();
+    if (fleetBody) fleetBody.innerHTML = '';
     swarm._terrainSeed = terrainSeed;
     swarm.showCoverage = coverageChk.checked;
     cam3D = view3D ? makeCamera3D(swarm) : null;
@@ -324,7 +328,60 @@
       adversaryMode: !!swarm.adversaryMode,
     };
   }
+  // A scenario file is untrusted data (soak finding R6), exactly like the
+  // radio presets it may carry (finding #7). Every field that reaches the
+  // controls or the swarm is checked BEFORE anything changes: numeric strings
+  // used to concatenate inside the sim ("500"+0 -> "5000"…, x -> "250NaN…"),
+  // and a null entry threw only after the mission had been relaunched.
+  function scenarioProblem(sc) {
+    const obj = v => v !== null && typeof v === 'object' && !Array.isArray(v);
+    const num = v => typeof v === 'number' && isFinite(v);
+    if (!obj(sc)) return 'not a scenario object';
+    for (const k of ['count', 'altitudeM', 'spacingPct', 'distancePct', 'windSpd', 'windDir', 'cityDensity', 'cityHeight', 'relayWing', 'videoKbps', 'seed']) {
+      if (sc[k] != null && !num(sc[k])) return k + ' must be a number';
+    }
+    for (const k of ['hetero', 'corridor', 'broadcast', 'coverage', 'spectrumAgility', 'lpiMode', 'adversaryMode', 'videoBackhaul', 'videoOn']) {
+      if (sc[k] != null && typeof sc[k] !== 'boolean') return k + ' must be true or false';
+    }
+    for (const k of ['env', 'airframe', 'terrain', 'relayAirframe']) {
+      if (sc[k] != null && typeof sc[k] !== 'string') return k + ' must be a string';
+    }
+    for (const k of ['radio', 'relayRadio']) {
+      if (sc[k] != null && typeof sc[k] !== 'string' && !obj(sc[k])) return k + ' must be a radio id';
+    }
+    for (const k of ['base', 'target', 'baseVelMps', 'targetVelMps']) {
+      if (sc[k] != null && (!obj(sc[k]) || !num(sc[k].x) || !num(sc[k].y))) return k + ' must be {x, y} with numeric x and y';
+    }
+    const bandOk = b => b == null || ['all', 'sub1g', '2.4g', '5g'].includes(b) || (num(b) && b > 0) ||
+      (typeof b === 'string' && /^[+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/.test(b.trim()) && +b > 0);
+    const list = (k, check) => {
+      if (sc[k] == null) return null;
+      if (!Array.isArray(sc[k])) return k + ' must be a list';
+      for (let i = 0; i < sc[k].length; i++) {
+        const e = sc[k][i], at = k + '[' + i + ']';
+        if (!obj(e)) return at + ' must be an object';
+        if (!num(e.x) || !num(e.y)) return at + '.x/y must be numbers';
+        if (e.on != null && typeof e.on !== 'boolean') return at + '.on must be true or false';
+        if (e.id != null && typeof e.id !== 'string') return at + '.id must be a string';
+        const bad = check(e, at);
+        if (bad) return bad;
+      }
+      return null;
+    };
+    return list('jammers', (j, at) => {
+      if (!num(j.erpDbm)) return at + '.erpDbm must be a number';
+      if (j.altM != null && !(num(j.altM) && j.altM > 0)) return at + '.altM must be a positive number';
+      if (!bandOk(j.band)) return at + '.band must be all|sub1g|2.4g|5g or a frequency in MHz';
+      if (j.freqMHz != null && !(num(j.freqMHz) && j.freqMHz > 0)) return at + '.freqMHz must be a positive number';
+      for (const k of ['moveSpeedMs', 'detectRangeM']) if (j[k] != null && !(num(j[k]) && j[k] >= 0)) return at + '.' + k + ' must be a non-negative number';
+      return null;
+    }) || list('gpsZones', (z, at) => (num(z.rM) && z.rM >= 0) ? null : at + '.rM must be a non-negative number') ||
+      ((sc.osm != null && (!obj(sc.osm) || !num(sc.osm.lat) || !num(sc.osm.lon) || (sc.osm.radiusM != null && !num(sc.osm.radiusM))))
+        ? 'osm must carry numeric lat/lon (and radiusM)' : null);
+  }
   function applyScenario(sc) {
+    const problem = scenarioProblem(sc);
+    if (problem) throw new Error(problem); // nothing has changed yet (R6)
     resetControlsToDefaults();
     // Imported presets may be re-id'd (built-in collision) or rejected
     // (failed validation) — follow what registration actually produced,
@@ -400,6 +457,9 @@
       swarm.baseVel = sc.baseVelMps ? { x: sc.baseVelMps.x, y: sc.baseVelMps.y } : { x: 0, y: 0 };
       swarm.targetVel = sc.targetVelMps ? { x: sc.targetVelMps.x, y: sc.targetVelMps.y } : { x: 0, y: 0 };
       if (sc.spectrumAgility != null && 'spectrumAgility' in swarm) swarm.spectrumAgility = !!sc.spectrumAgility;
+      // The capture header describes the mission at t=0 — including what this
+      // scenario just placed (soak finding R16).
+      if (swarm.time === 0 && typeof captureInitialSettings === 'function') swarm.initialSettings = captureInitialSettings(swarm);
       fitView(); updateJammerPanel(); updateZonePanel(); if (typeof updateCityLabels === 'function') updateCityLabels();
     };
     applyMissionOverrides();
@@ -752,6 +812,26 @@
     if (!swarm) return;
     download(exportCaptureJSONL(swarm), 'swarm-capture-' + Math.floor(swarm.time) + 's.jsonl', 'application/x-ndjson');
   });
+  const replayBtn = el('replayBtn'), replayInput = el('replayInput');
+  if (replayBtn && replayInput) {
+    replayBtn.addEventListener('click', () => replayInput.click());
+    replayInput.addEventListener('change', ev => {
+      const file = ev.target.files[0]; if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          if (typeof replayMission === 'function') {
+            const res = replayMission(String(reader.result || ''));
+            logEvent(swarm, 'Replayed capture: ' + file.name + ' (' + res.time.toFixed(1) + 's, ' + res.delivered + ' pkts delivered)', 'info');
+          }
+        } catch (e) {
+          alert('Could not replay capture: ' + e.message);
+        }
+      };
+      reader.readAsText(file);
+      ev.target.value = '';
+    });
+  }
 
   // --- Interference sources ---------------------------------------------------
   const addJammerBtn = el('addJammerBtn'), clearJammersBtn = el('clearJammersBtn');
@@ -1007,7 +1087,10 @@
     speedBtns.forEach(x => x.classList.toggle('active', x.dataset.speed === String(timeScale)));
   }));
   killBtn.addEventListener('click', () => {
-    if (selected && alive(selected)) { killDrone(swarm, selected); }
+    if (selected && alive(selected)) {
+      if (typeof recordUserAction === 'function') recordUserAction(swarm, { type: 'kill', id: selected.id });
+      killDrone(swarm, selected);
+    }
   });
   resetBtn.addEventListener('click', () => {
     osmLoadToken++; // a manual relaunch abandons any in-flight area fetch (finding #8)
@@ -1136,24 +1219,13 @@
   // --- 3D view ----------------------------------------------------------------
   let view3D = false;
   let cam3D = null;
-  const btnPoi = document.getElementById("addCriticalPoiBtn");
-  if (btnPoi) btnPoi.addEventListener("click", () => {
-    if (!swarm) return;
-    const pId = "POI-" + String.fromCharCode(65 + (swarm.pois ? swarm.pois.length : 5));
-    const newPoi = createPoI(pId, "New Crisis Site", swarm.base.x + 400 + Math.random()*200, swarm.base.y - 50 - Math.random()*150, "CRITICAL", 45, 10);
-    if (typeof PoiStore !== "undefined") {
-      PoiStore.addPoi(newPoi);
-    } else if (swarm.pois) {
-      swarm.pois.push(newPoi);
-    }
-    logEvent(swarm, `T+${Math.floor(swarm.time)} New critical ${pId} detected.`, "warn");
-  });
-
-  viewBtn.addEventListener('click', () => {
-    view3D = !view3D;
-    viewBtn.textContent = view3D ? '2D map' : '3D view';
-    if (view3D && !cam3D) cam3D = makeCamera3D(swarm);
-  });
+  if (viewBtn) {
+    viewBtn.addEventListener('click', () => {
+      view3D = !view3D;
+      viewBtn.textContent = view3D ? '2D map' : '3D view';
+      if (view3D && !cam3D) cam3D = makeCamera3D(swarm);
+    });
+  }
 
   function canvasPos(e) {
     const r = cv.getBoundingClientRect();
@@ -1265,6 +1337,12 @@
 
   cv.addEventListener('pointerup', e => {
     pointers.delete(e.pointerId);
+    if (swarm && typeof recordUserAction === 'function') {
+      if (dragMode === 'target') recordUserAction(swarm, { type: 'target', x: swarm.target.x, y: swarm.target.y });
+      else if (dragMode === 'base') recordUserAction(swarm, { type: 'base', x: swarm.base.x, y: swarm.base.y });
+      else if (dragMode === 'jammer' && selectedJammer) recordUserAction(swarm, { type: 'jammer_move', id: selectedJammer.id, x: selectedJammer.x, y: selectedJammer.y });
+      else if (dragMode === 'zone' && selectedZone) recordUserAction(swarm, { type: 'zone_move', id: selectedZone.id, x: selectedZone.x, y: selectedZone.y });
+    }
     if (dragMode === 'pinch') {
       // Keep pinching only while two fingers remain; one finger left ends it
       // cleanly rather than falling back into a surprise pan.
@@ -1345,20 +1423,75 @@
     ).join('') || '<tr><td colspan="4" class="dim">no links</td></tr>';
     if (hopsHtml !== lastHopsHtml) { hopsBody.innerHTML = hopsHtml; lastHopsHtml = hopsHtml; }
 
-    const fleetHtml = swarm.drones.map(d => {
-      const sel = d === selected ? ' style="outline:1px solid #e2e8f0;"' : '';
+    // O7: Keyed incremental DOM row updates for fleet list (Item 7)
+    const activeIds = new Set();
+    swarm.drones.forEach((d, i) => {
+      activeIds.add(d.id);
       const role = effRole(d);
-      return '<div class="fleet-row role-' + escHtml(role) + '"' + sel + ' data-id="' + escHtml(d.id) + '">' +
-        '<span class="dot"></span><span class="fid">' + escHtml(d.id) +
-        (d.cls === 'relay' ? ' \u25c6' : '') + (swarm.c2.vidGrantee === d.id ? ' \u25cf' : '') + '</span>' +
-        '<span class="frole">' + escHtml(role) + '</span>' +
-        '<span class="fbat"><span class="fbat-fill" style="width:' + d.batteryPct.toFixed(0) + '%"></span></span>' +
-        '<span class="fpct">' + d.batteryPct.toFixed(0) + '%</span></div>';
-    }).join('');
-        if (fleetHtml !== lastFleetHtml) { fleetBody.innerHTML = fleetHtml; lastFleetHtml = fleetHtml; }
+      const sel = d === selected;
+      const fidText = d.id + (d.cls === 'relay' ? ' \u25c6' : '') + (swarm.c2.vidGrantee === d.id ? ' \u25cf' : '');
+      const batPctStr = d.batteryPct.toFixed(0) + '%';
+      const targetClass = 'fleet-row role-' + role;
+      const targetOutline = sel ? '1px solid #e2e8f0' : '';
 
+      let row = fleetRowMap.get(d.id);
+      if (!row) {
+        row = document.createElement('div');
+        row.className = targetClass;
+        if (targetOutline) row.style.outline = targetOutline;
+        row.dataset.id = d.id;
 
+        const dot = document.createElement('span');
+        dot.className = 'dot';
+        row.appendChild(dot);
 
+        const fid = document.createElement('span');
+        fid.className = 'fid';
+        fid.textContent = fidText;
+        row._fid = fid;
+        row.appendChild(fid);
+
+        const frole = document.createElement('span');
+        frole.className = 'frole';
+        frole.textContent = role;
+        row._frole = frole;
+        row.appendChild(frole);
+
+        const fbat = document.createElement('span');
+        fbat.className = 'fbat';
+        const fbatFill = document.createElement('span');
+        fbatFill.className = 'fbat-fill';
+        fbatFill.style.width = batPctStr;
+        fbat.appendChild(fbatFill);
+        row._fbatFill = fbatFill;
+        row.appendChild(fbat);
+
+        const fpct = document.createElement('span');
+        fpct.className = 'fpct';
+        fpct.textContent = batPctStr;
+        row._fpct = fpct;
+        row.appendChild(fpct);
+
+        fleetRowMap.set(d.id, row);
+        fleetBody.appendChild(row);
+      } else {
+        if (row.className !== targetClass) row.className = targetClass;
+        if (row.style.outline !== targetOutline) row.style.outline = targetOutline;
+        if (row._fid && row._fid.textContent !== fidText) row._fid.textContent = fidText;
+        if (row._frole && row._frole.textContent !== role) row._frole.textContent = role;
+        if (row._fbatFill && row._fbatFill.style.width !== batPctStr) row._fbatFill.style.width = batPctStr;
+        if (row._fpct && row._fpct.textContent !== batPctStr) row._fpct.textContent = batPctStr;
+        if (fleetBody.children && fleetBody.children[i] !== row) {
+          fleetBody.insertBefore(row, fleetBody.children[i] || null);
+        }
+      }
+    });
+    for (const [id, row] of fleetRowMap) {
+      if (!activeIds.has(id)) {
+        if (row.parentNode && row.parentNode.removeChild) row.parentNode.removeChild(row);
+        fleetRowMap.delete(id);
+      }
+    }
 
     const evHtml = swarm.events.slice().reverse().map(ev =>
       '<div class="ev ev-' + escHtml(ev.kind) + '"><span class="ev-t">' + fmtSimClock(ev.t) + '</span>' + escHtml(ev.msg) + '</div>'
@@ -1376,6 +1509,58 @@
         '<br><span style="color:var(--dim)">● streaming · ◆ relay wing — one streamer at a time; video eats the same airtime C2 needs.</span>';
     } else {
       payloadInfo.textContent = 'Video backhaul off — enable it in Mission setup to see who gets to stream, and what it costs the chain.';
+    }
+
+    if (droneDecisionCard) {
+      if (selected && alive(selected) && typeof explainDroneDecision === 'function') {
+        const exp = explainDroneDecision(swarm, selected);
+        const marginStr = exp.marginDb != null ? exp.marginDb.toFixed(1) + ' dB' : '—';
+        const silenceStr = exp.c2AgeSec != null ? exp.c2AgeSec.toFixed(1) + 's' : '0.0s';
+        const spdStr = exp.speedMs.toFixed(1) + ' m/s';
+        droneDecisionCard.innerHTML =
+          '<div style="font-weight:600; color:var(--text); margin-bottom:4px;">' + escHtml(selected.id) + ' · ' + escHtml(exp.summary) + '</div>' +
+          '<div style="display:grid; grid-template-columns:1fr 1fr; gap:2px 8px; font-size:11px; margin-top:4px; color:var(--text-2);">' +
+            '<div><b>Mode:</b> ' + escHtml(exp.mode) + '</div>' +
+            '<div><b>Role:</b> ' + escHtml(exp.role) + '</div>' +
+            '<div><b>Upstream:</b> ' + escHtml(exp.upstream) + '</div>' +
+            '<div><b>Link margin:</b> ' + escHtml(marginStr) + '</div>' +
+            '<div><b>C2 silence:</b> ' + escHtml(silenceStr) + '</div>' +
+            '<div><b>Airspeed:</b> ' + escHtml(spdStr) + '</div>' +
+            '<div><b>Battery:</b> ' + selected.batteryPct.toFixed(1) + '%</div>' +
+            '<div><b>Energy:</b> ' + selected.energyWh.toFixed(1) + ' Wh</div>' +
+          '</div>';
+      } else if (selected && !alive(selected)) {
+        droneDecisionCard.innerHTML = '<div style="color:var(--lost)"><b>' + escHtml(selected.id) + '</b> is down (destroyed or battery exhausted).</div>';
+      } else {
+        droneDecisionCard.textContent = 'Select a drone on the map or fleet list to inspect its decision logic and live measurements.';
+      }
+    }
+
+    if (extDiagnostics && extDiagBody && typeof getExternalDiagnostics === 'function') {
+      const active = (typeof externalActive === 'function' && externalActive()) || (ExternalMode && ExternalMode.ws);
+      if (active) {
+        extDiagnostics.style.display = 'block';
+        const diags = getExternalDiagnostics();
+        const html = diags.map(d => {
+          const hbStr = d.heartbeatAge != null ? d.heartbeatAge.toFixed(1) + 's' : '—';
+          const posStr = d.positionAge != null ? d.positionAge.toFixed(1) + 's' : '—';
+          const statusStr = d.failureReason
+            ? '<span style="color:var(--lost)">' + escHtml(d.failureReason) + '</span>'
+            : escHtml(d.state);
+          return '<tr>' +
+            '<td><b>' + escHtml(d.id) + '</b></td>' +
+            '<td>' + escHtml(d.servicePhase) + '</td>' +
+            '<td>' + hbStr + '</td>' +
+            '<td>' + posStr + '</td>' +
+            '<td>' + escHtml(d.pendingCommand) + '</td>' +
+            '<td>' + d.retryCount + '</td>' +
+            '<td>' + statusStr + '</td>' +
+          '</tr>';
+        }).join('');
+        extDiagBody.innerHTML = html || '<tr><td colspan="7" class="dim">waiting for vehicles…</td></tr>';
+      } else {
+        extDiagnostics.style.display = 'none';
+      }
     }
 
     killBtn.disabled = !(selected && alive(selected));
@@ -1409,14 +1594,6 @@
   window.addEventListener('resize', resize);
   new ResizeObserver(resize).observe(cv.parentElement);
 
-  const backTo3DBtn = el('backTo3DModelBtn');
-  if (backTo3DBtn) {
-    backTo3DBtn.addEventListener('click', () => {
-      if (window.parent && window.parent !== window) {
-        window.parent.postMessage({ type: 'SWITCH_VIEW_DIMENSION', dim: '3d' }, '*');
-      }
-    });
-  }
   let hostActive = true;
   window.addEventListener('message', e => {
     if (e.data && e.data.type === 'SET_2D_ACTIVE') {
@@ -1433,40 +1610,51 @@
   let panelAccum = 0;
   let simAccum = 0;
   const FIXED_SIM_STEP_SEC = SIM_DT_SEC; // ONE step policy across browser/batch/bench (finding #28)
+  let frameErrorMsg = null; // last frame failure already shown to the operator
   function frame(now) {
     if (!hostActive || document.hidden) {
       lastT = now;
       requestAnimationFrame(frame);
       return;
     }
-    const realDt = Math.min(0.2, (now - lastT) / 1000);
-    lastT = now;
+    try {
+      const realDt = Math.min(0.2, (now - lastT) / 1000);
+      lastT = now;
 
-    let status;
-    if (!paused) {
-      // Real vehicles fly in real time — no fast-forward when a bridge is
-      // driving the drones; force 1x so sim time tracks the wall clock.
-      const scale = (typeof externalActive === 'function' && externalActive()) ? 1 : timeScale;
-      simAccum += realDt * scale;
-      if (simAccum > 1.0) simAccum = 1.0;
-      while (simAccum >= FIXED_SIM_STEP_SEC) {
-        status = stepSwarm(swarm, FIXED_SIM_STEP_SEC);
-        simAccum -= FIXED_SIM_STEP_SEC;
+      let status;
+      if (!paused) {
+        // Real vehicles fly in real time — no fast-forward when a bridge is
+        // driving the drones; force 1x so sim time tracks the wall clock.
+        const scale = (typeof externalActive === 'function' && externalActive()) ? 1 : timeScale;
+        simAccum += realDt * scale;
+        if (simAccum > 1.0) simAccum = 1.0;
+        while (simAccum >= FIXED_SIM_STEP_SEC) {
+          status = stepSwarm(swarm, FIXED_SIM_STEP_SEC);
+          simAccum -= FIXED_SIM_STEP_SEC;
+        }
       }
+      if (!status) status = chainStatus(swarm);
+
+      if (view3D) renderView3D(ctx, cv, swarm, status, cam3D, selected);
+      else render(ctx, cv, view, swarm, status, selected, usable());
+
+      panelAccum += realDt;
+      if (panelAccum > 0.2) { updatePanels(status); panelAccum = 0; }
+    } catch (e) {
+      // One bad frame must not end the loop (soak finding R7): it used to
+      // skip the requestAnimationFrame below and freeze the page silently.
+      // Say so once — event log, status pill, console stack — and keep going.
+      const msg = (e && e.message) || String(e);
+      if (msg !== frameErrorMsg) {
+        frameErrorMsg = msg;
+        console.error('Simulation frame failed:', e);
+        try { logEvent(swarm, 'Simulation error: ' + msg, 'error'); } catch (_) { /* swarm unusable too */ }
+        statusPill.textContent = 'Simulation error — see event log';
+        statusPill.className = 'pill lost';
+      }
+    } finally {
+      requestAnimationFrame(frame);
     }
-    if (!status) status = chainStatus(swarm);
-
-    if (view3D) renderView3D(ctx, cv, swarm, status, cam3D, selected);
-    else render(ctx, cv, view, swarm, status, selected, usable());
-
-    if (typeof PoiStore !== "undefined") {
-      PoiStore.syncUi(swarm);
-    }
-
-    panelAccum += realDt;
-    if (panelAccum > 0.2) { updatePanels(status); panelAccum = 0; }
-
-    requestAnimationFrame(frame);
   }
 
   // Debug/inspection handle (also handy from the devtools console)
