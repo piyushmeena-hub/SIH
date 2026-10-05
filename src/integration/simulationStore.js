@@ -381,7 +381,6 @@ class SharedSimulationStore {
     if (Array.isArray(survivors3D) && survivors3D.length > 0) {
       this.state.survivors = survivors3D.map((s, idx) => {
         const id = s.id || `SURV-${String(idx + 1).padStart(2, '0')}`;
-        const existing = this.state.survivors.find((ex) => ex.id === id);
         const pos2D = world3DTo2D(s.x, s.z);
         return {
           id,
