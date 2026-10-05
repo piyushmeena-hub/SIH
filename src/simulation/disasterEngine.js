@@ -441,7 +441,7 @@ export function createDisasterEngine(canvas, { onStatsUpdate, onEarthquakeUpdate
   let ctx = {};
   let INT = 1;
   let paused = false;
-  let viewMode = '3d';
+  let viewMode = '2d';
   let agents = [], victimList = [], obstacles = [], buildings = [], parts = [], sirens = [], helis = [], modeT = 0;
   let wreck = null, extraDispose = [];
 

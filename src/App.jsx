@@ -42,7 +42,7 @@ export default function App() {
   const [modeIndex, setModeIndex] = useState(0);
   const modeIndexRef = useRef(modeIndex);
   modeIndexRef.current = modeIndex;
-  const [viewMode, setViewMode] = useState('3d');
+  const [viewMode, setViewMode] = useState('2d');
   const viewModeRef = useRef(viewMode);
   viewModeRef.current = viewMode;
   const [intensity, setIntensity] = useState(1);

@@ -36,7 +36,7 @@ class SharedSimulationStore {
         elapsedTime: 0,
         timeScale: 5,
         paused: false,
-        viewMode: '3d',
+        viewMode: '2d',
         target2D: { x: 450, y: -120 },
         target3D: world2DTo3D(450, -120, 0),
       },
