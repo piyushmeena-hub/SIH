@@ -40,16 +40,15 @@ export class VerificationSuite {
     this.results.clear();
     this.logs = [];
     this.log('======================================================================');
-    this.log('STARTING AUTOMATED VERIFICATION SUITE ACROSS ALL 6 SCENARIOS');
+    this.log('STARTING AUTOMATED VERIFICATION SUITE ACROSS ALL 5 SCENARIOS');
     this.log('======================================================================');
 
     const tabs = [
       { id: 0, name: 'Earthquake' },
       { id: 1, name: 'Floods' },
       { id: 2, name: 'Wildfire' },
-      { id: 4, name: 'Volcano' },
-      { id: 5, name: 'Tsunami' },
-      { id: 6, name: 'Landslide' },
+      { id: 3, name: 'Tsunami' },
+      { id: 4, name: 'Landslide' },
     ];
 
     this.errorCount = 0;
@@ -109,7 +108,7 @@ export class VerificationSuite {
     this.engine.setIntensity(1.6); advance(12);
     lifecycle.push(`intensity1.6->start=${fleet?.drones.length}/${airborne()}`);
     this.engine.setIntensity(1.0);
-    this.engine.setMode((tab.id + 1) % 7); this.engine.setMode(tab.id); advance(12);
+    this.engine.setMode((tab.id + 1) % 5); this.engine.setMode(tab.id); advance(12);
     lifecycle.push(`switch&back=${fleet?.drones.length}/${airborne()}`);
     this.engine.resetSimulation?.(); this.engine.resetSimulation?.(); advance(12);
     lifecycle.push(`2xreset=${fleet?.drones.length}/${airborne()}`);

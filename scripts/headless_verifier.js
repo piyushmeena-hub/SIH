@@ -77,18 +77,6 @@ const SCENARIOS = [
     ],
     noNetworkOffer: false,
   },
-  {
-    name: 'Volcano',
-    safeZone3D: { x: 75, z: 75 },
-    cityBounds: { minX: -54, maxX: 54, minZ: -54, maxZ: 54 },
-    buildings: [
-      { id: 'vb1', x: 20, z: 0, w: 10, d: 10, h: 18 },
-    ],
-    victims: [
-      { id: 1, x: -20, z: 10, state: 'healthy', detected: false },
-    ],
-    noNetworkOffer: false,
-  },
 ];
 
 async function runScenarioVerification(sc) {

@@ -1,3 +1,5 @@
+[![Buy Me a Coffee](https://img.shields.io/badge/Buy%20me%20a%20coffee-dawgog-FFDD00?logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/dawgog) https://buymeacoffee.com/dawgog
+
 # drone/sitl — browser swarm sim <-> real/mock vehicles bridge
 
 This folder lets a browser-based drone-swarm command-and-control sim command

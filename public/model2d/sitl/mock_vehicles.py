@@ -303,6 +303,7 @@ class Vehicle:
                     self.init_state = "landed"
                     self.service_phase = "landed"
                     self.failed_at = None
+                    log.info("vehicle %s: landing complete -> phase landed", self.id)
                     return
                 if self.alt <= self.descent_ref_alt - 0.5:
                     self.descent_ref_alt = self.alt
@@ -310,6 +311,7 @@ class Vehicle:
                 if now - self.last_descent_at >= INIT_STEP_TIMEOUT_S:
                     self._fail("land", now)
                     self.service_phase = "failed"
+                    log.warning("vehicle %s: landing timed out! alt=%.2f descent_ref=%.2f", self.id, self.alt, self.descent_ref_alt)
                 return
             elif self.service_phase in ("landed", "swapping", "swapped"):
                 pass
@@ -348,6 +350,11 @@ class Vehicle:
             elif not self.airborne:
                 self.service_phase = None
                 self.launch_alt = self.alt
+                self._enter_step(INIT_CONFIRM_TAKEOFF, now)
+                self.goal_alt = self.takeoff_alt
+            elif self.alt < self.takeoff_alt - TAKEOFF_CONFIRM_ALT_M:
+                # Airborne but short of the takeoff altitude: climb first (#12).
+                self.service_phase = None
                 self._enter_step(INIT_CONFIRM_TAKEOFF, now)
                 self.goal_alt = self.takeoff_alt
             else:
@@ -635,12 +642,14 @@ async def handle_message(websocket, raw: str) -> None:
         WORLD.controller = websocket
         count = int(msg.get("count", 0))
         alt = float(msg.get("alt", 50))
+        # Same order as bridge.py: advisory status first, "ready" after it, so
+        # clients tested against the mock must tolerate status traffic (#10).
+        await send_status(websocket, f"mock: initializing {count} vehicle(s), target alt {alt:g} m")
         ids = WORLD.reset(count, alt, msg.get("origin"))
         await websocket.send(json.dumps({
             "type": "ready", "ids": ids,
             "vehicles": [WORLD.vehicles[i].to_ready_entry() for i in ids],
         }))
-        await send_status(websocket, f"mock: {count} vehicles initializing toward {alt} m")
 
     elif mtype == "goals":
         if WORLD.controller is not websocket:
@@ -675,6 +684,7 @@ async def handle_message(websocket, raw: str) -> None:
             return
 
         accepted, err, code, retryable = v.service(request_id, action, msg)
+        log.info("service req: vid=%s action=%s req_id=%s accepted=%s code=%s err=%s", vid, action, request_id, accepted, code, err)
         if accepted:
             v.service_action_history[history_key] = (accepted, err, code, retryable)
         ack_msg = {
