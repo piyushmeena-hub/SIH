@@ -7,6 +7,7 @@
 ### 🌐 **Live Demo : [https://sih-alpha-silk.vercel.app/](https://sih-alpha-silk.vercel.app/)**
 
 [![Live Demo](https://img.shields.io/badge/Live_Demo-sih--alpha--silk.vercel.app-00e676?style=for-the-badge&logo=vercel&logoColor=white)](https://sih-alpha-silk.vercel.app/)
+[![Watch Simulation Video](https://img.shields.io/badge/Watch_Video-1080p_HD_Simulation-ff3d00?style=for-the-badge&logo=googledrive&logoColor=white)](https://drive.google.com/file/d/1btd9Z9shN5KIlfis-gstKrpfiNMgCR28/view?usp=drive_link)
 [![Platform Version](https://img.shields.io/badge/Platform-v6.0.0-00e5ff?style=for-the-badge&logo=drone&logoColor=white)](package.json)
 [![React 18](https://img.shields.io/badge/React-18.3-61dafb?style=for-the-badge&logo=react&logoColor=black)](https://react.dev/)
 [![Three.js WebGL](https://img.shields.io/badge/Three.js-WebGL_3D-000000?style=for-the-badge&logo=threedotjs&logoColor=white)](https://threejs.org/)
@@ -16,9 +17,21 @@
 [![Browser Verification](https://img.shields.io/badge/Browser_Suite-70%2F70_PASSED-00e676?style=for-the-badge&logo=googlechrome&logoColor=white)](src/simulation/verificationSuite.js)
 [![2D Model Tests](https://img.shields.io/badge/2D_Swarm_Tests-404%2F404_PASSED-00e676?style=for-the-badge&logo=javascript&logoColor=black)](public/model2d/REVIEW-FIXES.md)
 
+<br />
+
+<a href="docs/assets/simulation_demo.mp4">
+  <img src="docs/assets/simulation_showcase.gif" alt="UAV-X Live Simulation Walkthrough (Click to open full MP4 video)" width="100%" />
+</a>
+
 <p align="center">
-  <a href="https://sih-alpha-silk.vercel.app/"><b>▶ Live Demo</b></a> •
+  🎬 <b><a href="docs/assets/simulation_demo.mp4">Watch In-Repo Simulation Video (MP4)</a></b> •
+  📺 <b><a href="https://drive.google.com/file/d/1btd9Z9shN5KIlfis-gstKrpfiNMgCR28/view?usp=drive_link">Stream Full 1080p HD Video (Google Drive)</a></b> •
+  🌐 <b><a href="https://sih-alpha-silk.vercel.app/">Launch Interactive Live Demo</a></b>
+</p>
+
+<p align="center">
   <a href="#-overview--key-capabilities">Overview</a> •
+  <a href="#-live-simulation-visual-showcase">Simulation Showcase</a> •
   <a href="#-5-active-natural-disaster-theatres">Disaster Theatres</a> •
   <a href="#-system-architecture--state-machines">Architecture</a> •
   <a href="#-core-engineering-subsystems">Subsystems</a> •
@@ -56,6 +69,51 @@ The platform simulates autonomous quadrotor swarm coordination, multi-hop Flying
 | **Automated Verification** | **59/59** Node Checks · **70/70** Browser WebGL Checks · **404/404** 2D Tests | [`verificationSuite.js`](src/simulation/verificationSuite.js) / [`headless_verifier.js`](scripts/headless_verifier.js) |
 
 </div>
+
+---
+
+## 🎬 Live Simulation Visual Showcase
+
+Captured directly from the **[Full 1080p HD Simulation Walkthrough (`simulation_demo.mp4`)](docs/assets/simulation_demo.mp4)** across all 5 3D disaster environments and the 2D Tactical RF Relay Simulator:
+
+<table align="center" width="100%">
+  <tr>
+    <td align="center" width="50%">
+      <img src="docs/assets/sim_earthquake.jpg" alt="3D Earthquake Simulation" width="100%" /><br />
+      <b>1. 🏚️ Earthquake (M7.0 Partial Collapse & 3D Mesh)</b><br />
+      <sub>Multi-hop cyan FANET links, structural shearing/tilt, PGA readout, and live 4-tab UAV-X Swarm Cockpit.</sub>
+    </td>
+    <td align="center" width="50%">
+      <img src="docs/assets/sim_flood.jpg" alt="3D Flood Simulation" width="100%" /><br />
+      <b>2. 🌊 Flood (Sustained Inundation & Aerial/Marine SAR)</b><br />
+      <sub>3.9m street inundation, rooftop survivor beacons, navigable waterway boats, and rescue helicopters.</sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="50%">
+      <img src="docs/assets/sim_wildfire.jpg" alt="3D Wildfire Simulation" width="100%" /><br />
+      <b>3. 🔥 Wildfire (Street-Level Survivor Beacon & Smoke)</b><br />
+      <sub>Volumetric smoke plumes, urban-core Ground Control Centre, and localized survivor marker at +2.5m.</sub>
+    </td>
+    <td align="center" width="50%">
+      <img src="docs/assets/sim_tsunami.jpg" alt="3D Tsunami & No-Network Zone" width="100%" /><br />
+      <b>4. 🌊 Tsunami (No-Network Zone & APF Safety Spheres)</b><br />
+      <sub>Coastal surge inundation with active No-Network Zone perimeter relay routing and 3D APF safety envelopes.</sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="50%">
+      <img src="docs/assets/sim_landslide.jpg" alt="3D Landslide Simulation" width="100%" /><br />
+      <b>5. ⛰️ Landslide (Debris Chute & Perimeter Relay Bridging)</b><br />
+      <sub>Active boulder/mud slide channel with 35m No-Network denial zone and hop-by-hop amber/cyan mesh links.</sub>
+    </td>
+    <td align="center" width="50%">
+      <img src="docs/assets/sim_2d_tactical.jpg" alt="2D Tactical C2 Mesh Link Planner" width="100%" /><br />
+      <b>6. 📡 2D Tactical C2 Mesh Link Planner</b><br />
+      <sub>Self-healing multi-hop relay chain (170m / 10–23 dB margins), calibrated Holybro SiK 915 MHz specs, and target orbit.</sub>
+    </td>
+  </tr>
+</table>
 
 ---
 
