@@ -4,30 +4,66 @@
 
 ### **Autonomous Multi-UAV Swarm Coordination • Multi-Hop FANET Mesh • 3D/2D Synchronized Digital Twin**
 
-### 🌐 **Live Demo : [https://sih-alpha-silk.vercel.app/](https://sih-alpha-silk.vercel.app/)**
+<br />
 
-[![Live Demo](https://img.shields.io/badge/Live_Demo-sih--alpha--silk.vercel.app-00e676?style=for-the-badge&logo=vercel&logoColor=white)](https://sih-alpha-silk.vercel.app/)
-[![Watch Simulation Video](https://img.shields.io/badge/Watch_Video-1080p_HD_Simulation-ff3d00?style=for-the-badge&logo=googledrive&logoColor=white)](https://drive.google.com/file/d/1btd9Z9shN5KIlfis-gstKrpfiNMgCR28/view?usp=drive_link)
-[![Platform Version](https://img.shields.io/badge/Platform-v6.0.0-00e5ff?style=for-the-badge&logo=drone&logoColor=white)](package.json)
-[![React 18](https://img.shields.io/badge/React-18.3-61dafb?style=for-the-badge&logo=react&logoColor=black)](https://react.dev/)
-[![Three.js WebGL](https://img.shields.io/badge/Three.js-WebGL_3D-000000?style=for-the-badge&logo=threedotjs&logoColor=white)](https://threejs.org/)
-[![Vite 6](https://img.shields.io/badge/Vite-6.0-646cff?style=for-the-badge&logo=vite&logoColor=white)](https://vitejs.dev/)
-[![Python FastAPI](https://img.shields.io/badge/FastAPI-MAVLink_v2-009688?style=for-the-badge&logo=fastapi&logoColor=white)](main.py)
-[![Headless Verifier](https://img.shields.io/badge/Node_Verifier-59%2F59_PASSED-00e676?style=for-the-badge&logo=nodedotjs&logoColor=white)](scripts/headless_verifier.js)
-[![Browser Verification](https://img.shields.io/badge/Browser_Suite-70%2F70_PASSED-00e676?style=for-the-badge&logo=googlechrome&logoColor=white)](src/simulation/verificationSuite.js)
-[![2D Model Tests](https://img.shields.io/badge/2D_Swarm_Tests-404%2F404_PASSED-00e676?style=for-the-badge&logo=javascript&logoColor=black)](public/model2d/REVIEW-FIXES.md)
+<!-- ROW 1: HERO CALL-TO-ACTION BUTTONS (EXTRA LARGE) -->
+<p align="center">
+  <a href="https://sih-alpha-silk.vercel.app/">
+    <img src="https://img.shields.io/badge/%F0%9F%9A%80_LAUNCH_LIVE_DEMO-sih--alpha--silk.vercel.app-00e676?style=for-the-badge&labelColor=0a0e17&logo=vercel&logoColor=00e676&logoWidth=22" height="50" alt="Launch Live Demo" />
+  </a>
+  &nbsp;&nbsp;
+  <a href="https://drive.google.com/file/d/1btd9Z9shN5KIlfis-gstKrpfiNMgCR28/view?usp=drive_link">
+    <img src="https://img.shields.io/badge/%F0%9F%8E%AC_WATCH_SIMULATION-1080p_HD_VIDEO-ff3d00?style=for-the-badge&labelColor=0a0e17&logo=googledrive&logoColor=ff3d00&logoWidth=22" height="50" alt="Watch 1080p HD Simulation Video" />
+  </a>
+  &nbsp;&nbsp;
+  <a href="https://raw.githubusercontent.com/piyushmeena-hub/SIH/main/docs/assets/simulation_demo.mp4">
+    <img src="https://img.shields.io/badge/%F0%9F%93%BA_DIRECT_MP4-INSTANT_STREAM-00b0ff?style=for-the-badge&labelColor=0a0e17&logo=github&logoColor=00b0ff&logoWidth=22" height="50" alt="Direct MP4 Stream" />
+  </a>
+</p>
+
+<!-- ROW 2: CORE ARCHITECTURE & TECH STACK (LARGE PILLS) -->
+<p align="center">
+  <a href="package.json">
+    <img src="https://img.shields.io/badge/PLATFORM-v6.0.0_RELEASE-00e5ff?style=for-the-badge&labelColor=0f172a&logo=github&logoColor=00e5ff&logoWidth=18" height="38" alt="Platform v6.0.0" />
+  </a>
+  &nbsp;
+  <a href="https://react.dev/">
+    <img src="https://img.shields.io/badge/REACT-18.3-61dafb?style=for-the-badge&labelColor=0f172a&logo=react&logoColor=61dafb&logoWidth=18" height="38" alt="React 18.3" />
+  </a>
+  &nbsp;
+  <a href="https://threejs.org/">
+    <img src="https://img.shields.io/badge/THREE.JS-WEBGL_3D-a855f7?style=for-the-badge&labelColor=0f172a&logo=threedotjs&logoColor=ffffff&logoWidth=18" height="38" alt="Three.js WebGL 3D" />
+  </a>
+  &nbsp;
+  <a href="https://vitejs.dev/">
+    <img src="https://img.shields.io/badge/VITE-6.0-646cff?style=for-the-badge&labelColor=0f172a&logo=vite&logoColor=ffd62e&logoWidth=18" height="38" alt="Vite 6.0" />
+  </a>
+  &nbsp;
+  <a href="main.py">
+    <img src="https://img.shields.io/badge/FASTAPI-MAVLINK_V2-00bfa5?style=for-the-badge&labelColor=0f172a&logo=fastapi&logoColor=00bfa5&logoWidth=18" height="38" alt="FastAPI MAVLink v2" />
+  </a>
+</p>
+
+<!-- ROW 3: 100% VERIFICATION SCORECARD BADGES (LARGE GLOWING GREEN) -->
+<p align="center">
+  <a href="scripts/headless_verifier.js">
+    <img src="https://img.shields.io/badge/NODE_VERIFIER-59%2F59_PASSED_(100%25)-00e676?style=for-the-badge&labelColor=062e22&logo=nodedotjs&logoColor=00e676&logoWidth=18" height="40" alt="Node Verifier 59/59 Passed" />
+  </a>
+  &nbsp;&nbsp;
+  <a href="src/simulation/verificationSuite.js">
+    <img src="https://img.shields.io/badge/BROWSER_WEBGL_SUITE-70%2F70_PASSED_(100%25)-00e676?style=for-the-badge&labelColor=062e22&logo=googlechrome&logoColor=00e676&logoWidth=18" height="40" alt="Browser Suite 70/70 Passed" />
+  </a>
+  &nbsp;&nbsp;
+  <a href="public/model2d/REVIEW-FIXES.md">
+    <img src="https://img.shields.io/badge/2D_SWARM_%26_SITL_TESTS-404%2F404_PASSED_(100%25)-00e676?style=for-the-badge&labelColor=062e22&logo=javascript&logoColor=00e676&logoWidth=18" height="40" alt="2D Swarm Tests 404/404 Passed" />
+  </a>
+</p>
 
 <br />
 
 <a href="https://drive.google.com/file/d/1btd9Z9shN5KIlfis-gstKrpfiNMgCR28/view?usp=drive_link">
   <img src="docs/assets/simulation_showcase.gif" alt="UAV-X Live Simulation Walkthrough (Click to watch full 1080p HD video)" width="100%" />
 </a>
-
-<p align="center">
-  📺 <b><a href="https://drive.google.com/file/d/1btd9Z9shN5KIlfis-gstKrpfiNMgCR28/view?usp=drive_link">Watch Full 1080p HD Simulation Video</a></b> •
-  🎬 <b><a href="https://raw.githubusercontent.com/piyushmeena-hub/SIH/main/docs/assets/simulation_demo.mp4">Direct MP4 Stream / Download</a></b> •
-  🌐 <b><a href="https://sih-alpha-silk.vercel.app/">Launch Interactive Live Demo</a></b>
-</p>
 
 <p align="center">
   <a href="#-overview--key-capabilities">Overview</a> •
