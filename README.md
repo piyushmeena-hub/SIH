@@ -19,13 +19,13 @@
 
 <br />
 
-<a href="docs/assets/simulation_demo.mp4">
-  <img src="docs/assets/simulation_showcase.gif" alt="UAV-X Live Simulation Walkthrough (Click to open full MP4 video)" width="100%" />
+<a href="https://drive.google.com/file/d/1btd9Z9shN5KIlfis-gstKrpfiNMgCR28/view?usp=drive_link">
+  <img src="docs/assets/simulation_showcase.gif" alt="UAV-X Live Simulation Walkthrough (Click to watch full 1080p HD video)" width="100%" />
 </a>
 
 <p align="center">
-  🎬 <b><a href="docs/assets/simulation_demo.mp4">Watch In-Repo Simulation Video (MP4)</a></b> •
-  📺 <b><a href="https://drive.google.com/file/d/1btd9Z9shN5KIlfis-gstKrpfiNMgCR28/view?usp=drive_link">Stream Full 1080p HD Video (Google Drive)</a></b> •
+  📺 <b><a href="https://drive.google.com/file/d/1btd9Z9shN5KIlfis-gstKrpfiNMgCR28/view?usp=drive_link">Watch Full 1080p HD Simulation Video</a></b> •
+  🎬 <b><a href="https://raw.githubusercontent.com/piyushmeena-hub/SIH/main/docs/assets/simulation_demo.mp4">Direct MP4 Stream / Download</a></b> •
   🌐 <b><a href="https://sih-alpha-silk.vercel.app/">Launch Interactive Live Demo</a></b>
 </p>
 
@@ -74,7 +74,7 @@ The platform simulates autonomous quadrotor swarm coordination, multi-hop Flying
 
 ## 🎬 Live Simulation Visual Showcase
 
-Captured directly from the **[Full 1080p HD Simulation Walkthrough (`simulation_demo.mp4`)](docs/assets/simulation_demo.mp4)** across all 5 3D disaster environments and the 2D Tactical RF Relay Simulator:
+Captured directly from the **[Full 1080p HD Simulation Walkthrough](https://drive.google.com/file/d/1btd9Z9shN5KIlfis-gstKrpfiNMgCR28/view?usp=drive_link)** across all 5 3D disaster environments and the 2D Tactical RF Relay Simulator:
 
 <table align="center" width="100%">
   <tr>
