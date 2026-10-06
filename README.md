@@ -19,7 +19,6 @@
 <p align="center">
   <a href="https://sih-alpha-silk.vercel.app/"><b>▶ Live Demo</b></a> •
   <a href="#-overview--key-capabilities">Overview</a> •
-  <a href="#-whats-updated--removed-in-v60">Changelog (Updated & Removed)</a> •
   <a href="#-5-active-natural-disaster-theatres">Disaster Theatres</a> •
   <a href="#-system-architecture--state-machines">Architecture</a> •
   <a href="#-core-engineering-subsystems">Subsystems</a> •
@@ -57,38 +56,6 @@ The platform simulates autonomous quadrotor swarm coordination, multi-hop Flying
 | **Automated Verification** | **59/59** Node Checks · **70/70** Browser WebGL Checks · **404/404** 2D Tests | [`verificationSuite.js`](src/simulation/verificationSuite.js) / [`headless_verifier.js`](scripts/headless_verifier.js) |
 
 </div>
-
----
-
-## 🔄 What's Updated & Removed in `v6.0`
-
-A comprehensive summary of all features, modules, and controls that have been **removed**, **replaced**, or **updated** in the current release:
-
-### ❌ Removed & Deprecated Items
-
-| Removed / Replaced Item | Current Replacement & Rationale |
-| :--- | :--- |
-| **Volcano & Tornado Disaster Tabs** | **Removed** from [`MODES_META`](src/simulation/disasterEngine.js), the bottom dock, [`verificationSuite.js`](src/simulation/verificationSuite.js), and [`headless_verifier.js`](scripts/headless_verifier.js). The platform now focuses on **5 core disaster scenarios** mapped to hotkeys <kbd>1</kbd>–<kbd>5</kbd>. |
-| **Legacy "RF Jamming" Terminology (3D)** | **Replaced** across all 3D UI controls, state stores, and verification logs with **No-Network Zone** (`⚡ No-Network Zone (ON/OFF)` + dynamic radius slider $15\text{m}–60\text{m}$). |
-| **Survivor Visibility Toggle** | **Removed**. Survivors are now **universally rendered** in 3D scenes at all times with live state beacons (Red: Waiting · Amber: Assigned · Green: Surveyed). |
-| **Standalone 2D `public/model2d/js/poi.js`** | **Removed & Consolidated**. PoI and survivor state management is unified across [`simulationStore.js`](src/integration/simulationStore.js) and [`public/model2d/js/main.js`](public/model2d/js/main.js). |
-| **Background 2D-to-3D State Overwrites** | **Removed**. In `3D Disaster` mode, `sync2DSwarmToStore()` in [`simulationStore.js`](src/integration/simulationStore.js) blocks background 2D iframe snapshots from injecting phantom drones or overwriting the authoritative 3D `FleetManager` mesh. |
-| **Unmodified <kbd>D</kbd> Diagnostics Key** | **Updated**. Plain <kbd>D</kbd> is now dedicated to **3D Free-Cam rightward flight (`WASD`)**. The Diagnostics Overlay is now toggled via **<kbd>~</kbd> / <kbd>`</kbd>**, **<kbd>Alt</kbd>/<kbd>Ctrl</kbd>/<kbd>Cmd</kbd> + <kbd>D</kbd>**, or the **`🛠 Debug [D]`** HUD button. |
-| **Oscillating Floodwater Level** | **Updated**. In the **Flood** scenario, river water now rises smoothly over the valley town and **maintains its peak inundation level** rather than draining back down. |
-
-### ✨ Major Updates & New Features
-
-| Updated / Added Capability | Technical Details |
-| :--- | :--- |
-| **2D Tactical View as Default Startup** | Application boots directly into **2D Tactical C2 View** (`viewMode = '2d'`) and synchronizes view transitions via `sharedSim.setViewMode()` and `postMessage({ type: 'SET_2D_ACTIVE' })`. |
-| **Single-Burst Earthquake Engine (`10s`) & 5 Damage Tiers** | Added interactive **`Start Earthquake (10s)`** trigger (`#bTriggerEarthquake`), **`Reset City`** button (`#bResetEarthquake`), **Richter Magnitude Slider (`M 1.0` – `M 9.0`)**, live **Peak Ground Acceleration (`PGA: ~g`)** readout, and **5 Structural Damage Tiers** (`Tier 1: No Damage` $\rightarrow$ `Tier 5: Catastrophic` pancake collapse). |
-| **Interactive Landslide Trigger (`#bSlide`)** | Added **`Start Landslide` / `Stop Landslide`** hazard toggle button in the Landslide control panel to trigger or halt mountainside boulder and mud slides on demand. |
-| **3D Free-Cam Flight & UAV Switcher** | Full keyboard flight in 3D (<kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> / <kbd>Arrow Keys</kbd> horizontal, <kbd>Space</kbd> / <kbd>Shift</kbd> vertical altitude, <kbd>+</kbd>/<kbd>-</kbd> zoom) plus **`‹` / `›` Previous/Next UAV** and **`Next UAV →`** cycling buttons in the Drone Inspector and Cockpit pill bar. |
-| **Draggable, Resizable & Scalable HUD Panels** | Both the left **Scenario Info Box** (`#info`) and right **Simulation Controls Box** (`.controls`) support **edge/corner drag-to-resize**, preset chips (**`S`**, **`M`**, **`L`**, **`XL`**), custom **Width (`280px–800px`)** and **Scale (`80%–125%`)** sliders, `localStorage` persistence, and **`↺`** reset. |
-| **Tiered 3D Cruising Altitudes & Collision Fix** | Each UAV is assigned a distinct vertical flight layer (`13.0m–21.8m` for Search UAVs, `21.0m–24.5m` for Relays) with expanded APF separation (`APF_SAFETY_DIST = 5.5m`, `HARD_SAFETY_CLEARANCE = 2.0m`) to eliminate drone-drone collisions. |
-| **Automatic Hazard & Overlay Reset Cleanup** | Switching disaster tabs or clicking **`↺ Reset Sim`** automatically resets `No-Network Zone`, `Thermal FLIR`, and `Gas Plume` states and clears stale critical POIs. |
-| **4-Tab UAV-X Swarm Autonomy Cockpit** | Embedded 3D HUD cockpit (`#swarmCockpit`) with 4 live telemetry tabs (**`🛸 Fleet Kinematics`**, **`📡 FANET Mesh`**, **`🧠 AI & FLIR`**, **`🗺️ OctoMap 3D`**) and 4 toggleable 3D visual layers (**`APF Safety`**, **`FANET Mesh`**, **`OctoMap 3D`**, **`AI Vision`**). |
-| **2D Simulator Audit, Replay & SITL Suite** | Added mission replay capture ([`replay.js`](public/model2d/js/replay.js)), benchmark comparator ([`compare.js`](public/model2d/tools/compare.js)), ArduPilot SITL acceptance runner ([`run_acceptance.py`](public/model2d/sitl/run_acceptance.py)), and **70+ external audit fixes** ([`REVIEW-FIXES.md`](public/model2d/REVIEW-FIXES.md)). |
 
 ---
 
@@ -268,7 +235,7 @@ In `3D Disaster` mode, the interface provides two independently customizable gla
 | Key / Control | Action / Function | Scope |
 | :---: | :--- | :--- |
 | <kbd>1</kbd> – <kbd>5</kbd> | Switch active disaster scenario (**1: Earthquake**, **2: Flood**, **3: Wildfire**, **4: Tsunami**, **5: Landslide**) | 3D Mode |
-| <kbd>~</kbd> / <kbd>`</kbd> or <kbd>Alt</kbd>+<kbd>D</kbd> | **Toggle UAV-X Diagnostics & Verification Suite Overlay** (also via `🛠 Debug [D]` button) | Global |
+| <kbd>~</kbd> or <kbd>Alt</kbd>+<kbd>D</kbd> | **Toggle UAV-X Diagnostics & Verification Suite Overlay** (also via `🛠 Debug [D]` button) | Global |
 | <kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd> / <kbd>Arrows</kbd> | **3D Free-Cam Horizontal Flight** (forward, strafe left, backward, strafe right) | 3D Viewport |
 | <kbd>Space</kbd> / <kbd>Shift</kbd> | **3D Free-Cam Vertical Flight** (ascend / descend camera altitude) | 3D Viewport |
 | <kbd>Left Click + Drag</kbd> | Orbit / look around in 3D perspective viewport | 3D Viewport |
