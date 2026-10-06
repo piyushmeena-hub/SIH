@@ -4,7 +4,7 @@
 
 ### **Autonomous Multi-UAV Swarm Coordination • Multi-Hop FANET Mesh • 3D/2D Synchronized Digital Twin**
 
-<br />
+## 🌐 **Live Demo : [https://sih-alpha-silk.vercel.app/](https://sih-alpha-silk.vercel.app/)**
 
 <!-- ROW 1: HERO CALL-TO-ACTION BUTTONS (EXTRA LARGE) -->
 <p align="center">
@@ -64,6 +64,12 @@
 <a href="https://drive.google.com/file/d/1btd9Z9shN5KIlfis-gstKrpfiNMgCR28/view?usp=drive_link">
   <img src="docs/assets/simulation_showcase.gif" alt="UAV-X Live Simulation Walkthrough (Click to watch full 1080p HD video)" width="100%" />
 </a>
+
+<p align="center">
+  🌐 <b>Live Demo : <a href="https://sih-alpha-silk.vercel.app/">https://sih-alpha-silk.vercel.app/</a></b> &nbsp;•&nbsp;
+  📺 <b><a href="https://drive.google.com/file/d/1btd9Z9shN5KIlfis-gstKrpfiNMgCR28/view?usp=drive_link">Watch Full 1080p HD Simulation Video</a></b> &nbsp;•&nbsp;
+  🎬 <b><a href="https://raw.githubusercontent.com/piyushmeena-hub/SIH/main/docs/assets/simulation_demo.mp4">Direct MP4 Stream</a></b>
+</p>
 
 <p align="center">
   <a href="#-overview--key-capabilities">Overview</a> •
